@@ -348,8 +348,8 @@
             <table style={{ borderCollapse:"collapse", fontFamily:"'DM Mono',monospace", fontSize:11, width:"100%" }}>
               <thead>
                 <tr>
-                  <th className="table-mortgage-col" style={{ ...th, textAlign:"left", padding:"9px 6px", position:"sticky", left:0, zIndex:2, minWidth:44, fontSize:10 }}>
-                    Mortgage ↓ / Price →
+                  <th className="table-mortgage-col" style={{ ...th, textAlign:"left", padding:"9px 6px", position:"sticky", left:0, zIndex:2, minWidth:44, fontSize:10, whiteSpace:"nowrap" }}>
+                    ₪M ↓
                   </th>
                   {prices.map(price => {
                     const above = maxAffordable && price>maxAffordable;
