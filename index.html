@@ -110,7 +110,7 @@
     }
 
     function calcClosing(price, p = {}) {
-      const { lawyerPct=0.01, agentPct=0.01, brokerFee=20000, brokerFeePct=0.01, brokerFeeMode="flat", appraiser=4500, otherCosts=2500, brackets=BUYER_TYPES.first.brackets } = p;
+      const { lawyerPct=0.01, agentPct=0.01, brokerFee=20000, brokerFeePct=0.01, brokerFeeMode="flat", appraiser=4500, otherCosts=2500, renovations=0, brackets=BUYER_TYPES.first.brackets } = p;
       // Broker fee: flat amount OR % of mortgage (price minus down payment)
       // For closing cost calc we don't know the exact loan, so use price*(1-minDown) as proxy when in pct mode
       // Caller passes resolvedBrokerFee if they know the exact loan
@@ -125,7 +125,8 @@
         price*agentPct*1.17 +
         resolvedBroker*1.17 +
         appraiser +
-        otherCosts
+        otherCosts +
+        renovations
       );
     }
 
@@ -417,6 +418,7 @@
       const [brokerFeeMode, setBrokerFeeMode] = useState(() => s("brokerFeeMode", "flat"));
       const [appraiser, setAppraiser]       = useState(() => s("appraiser", 4500));
       const [otherCosts, setOtherCosts]     = useState(() => s("otherCosts", 2500));
+      const [renovations, setRenovations]   = useState(() => s("renovations", 0));
       const [mortgageRate, setMortgageRate] = useState(() => s("mortgageRate", 4.75));
       const [mortgageYears, setMortgageYears] = useState(() => s("mortgageYears", 30));
       const [showClosing, setShowClosing]   = useState(() => s("showClosing", true));
@@ -427,18 +429,18 @@
         try {
           localStorage.setItem(STORE_KEY, JSON.stringify({
             theme, maxCapital, maxMonthly, lawyerPct, agentPct,
-            brokerFee, brokerFeePct, brokerFeeMode, appraiser, otherCosts,
+            brokerFee, brokerFeePct, brokerFeeMode, appraiser, otherCosts, renovations,
             mortgageRate, mortgageYears, showClosing, buyerType,
           }));
         } catch {}
       }, [theme, maxCapital, maxMonthly, lawyerPct, agentPct,
-          brokerFee, brokerFeePct, brokerFeeMode, appraiser, otherCosts,
+          brokerFee, brokerFeePct, brokerFeeMode, appraiser, otherCosts, renovations,
           mortgageRate, mortgageYears, showClosing, buyerType]);
 
       const btype = BUYER_TYPES[buyerType];
       const minDownPct = btype.minDown;
       const rate = mortgageRate/100;
-      const cp = { lawyerPct:lawyerPct/100, agentPct:agentPct/100, brokerFee, brokerFeePct:brokerFeePct/100, brokerFeeMode, appraiser, otherCosts, rate, years:mortgageYears, brackets:btype.brackets };
+      const cp = { lawyerPct:lawyerPct/100, agentPct:agentPct/100, brokerFee, brokerFeePct:brokerFeePct/100, brokerFeeMode, appraiser, otherCosts, renovations, rate, years:mortgageYears, brackets:btype.brackets };
       const moLoanConst = maxLoanFromMonthly(maxMonthly, rate, mortgageYears);
 
       const chartData = ALL_PRICES.map(price => {
@@ -603,9 +605,8 @@
                     )}
                   </div>
                   <Slider label="Appraiser"        value={appraiser}  min={0}   max={15000} step={500}  onChange={setAppraiser}  display={v=>"₪"+v.toLocaleString()} t={t} />
-                  <div style={{ gridColumn:"1/-1" }}>
-                    <Slider label="Other (Tabu, notary, inspector, renovations…)" value={otherCosts} min={0} max={200000} step={1000} onChange={setOtherCosts} display={v=>"₪"+v.toLocaleString()} t={t} />
-                  </div>
+                  <Slider label="Renovations" value={renovations} min={0} max={200000} step={500} onChange={setRenovations} display={v=>"₪"+v.toLocaleString()} t={t} />
+                  <Slider label="Other (Tabu, notary, inspector…)" value={otherCosts} min={0} max={30000} step={500} onChange={setOtherCosts} display={v=>"₪"+v.toLocaleString()} t={t} />
                 </div>
               )}
             </div>
