@@ -13,8 +13,8 @@
       width: 100%;
       cursor: pointer;
       accent-color: #9a6c00;
-      /* Larger touch target on mobile */
-      min-height: 28px;
+      min-height: 36px;      /* larger touch target */
+      touch-action: none;    /* slider captures touch, page scroll won't interfere */
     }
 
     /* Responsive grids */
@@ -180,6 +180,7 @@
 
     // ─── SLIDER ─────────────────────────────────────────────────────────────
     function Slider({ label, value, min, max, step, onChange, display, t }) {
+      const dragging = React.useRef(false);
       return (
         <div style={{ marginBottom: 18 }}>
           <div style={{ display:"flex", justifyContent:"space-between", marginBottom: 5 }}>
@@ -187,7 +188,13 @@
             <span style={{ fontSize:13, fontWeight:700, color:t.accent, fontFamily:"'DM Mono',monospace" }}>{display(value)}</span>
           </div>
           <input type="range" min={min} max={max} step={step} value={value}
-            onChange={e => onChange(Number(e.target.value))}
+            onPointerDown={e => {
+              dragging.current = true;
+              e.currentTarget.setPointerCapture(e.pointerId);
+            }}
+            onPointerUp={() => { dragging.current = false; }}
+            onPointerCancel={() => { dragging.current = false; }}
+            onChange={e => { if (dragging.current) onChange(Number(e.target.value)); }}
             style={{ width:"100%", accentColor:t.sliderAccent, cursor:"pointer" }}
           />
           <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:t.textDim, marginTop:2 }}>
@@ -583,6 +590,7 @@
                     {brokerFeeMode==="flat" ? (
                       <>
                         <input type="range" min={0} max={40000} step={1000} value={brokerFee}
+                          onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); }}
                           onChange={e => setBrokerFee(Number(e.target.value))}
                           style={{ width:"100%", accentColor:t.sliderAccent, cursor:"pointer" }} />
                         <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:t.textDim, marginTop:2 }}>
@@ -594,6 +602,7 @@
                     ) : (
                       <>
                         <input type="range" min={0} max={2} step={0.1} value={brokerFeePct}
+                          onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); }}
                           onChange={e => setBrokerFeePct(Number(e.target.value))}
                           style={{ width:"100%", accentColor:t.sliderAccent, cursor:"pointer" }} />
                         <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:t.textDim, marginTop:2 }}>
