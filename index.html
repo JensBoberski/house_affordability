@@ -13,6 +13,21 @@
       width: 100%;
       cursor: pointer;
       accent-color: #9a6c00;
+      /* Larger touch target on mobile */
+      min-height: 28px;
+    }
+
+    /* Responsive grids */
+    .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+    .grid-3col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    .grid-4col { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }
+    .grid-closing { display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px; }
+
+    @media (max-width: 640px) {
+      .grid-2col    { grid-template-columns: 1fr; gap: 0; }
+      .grid-3col    { grid-template-columns: 1fr; gap: 8px; }
+      .grid-4col    { grid-template-columns: 1fr 1fr; gap: 8px; }
+      .grid-closing { grid-template-columns: 1fr; gap: 0; }
     }
   </style>
 </head>
@@ -189,7 +204,7 @@
       return (
         <div style={{ marginBottom:16 }}>
           <div style={{ fontSize:12, fontWeight:600, color:t.textMid, marginBottom:8 }}>Purchase type</div>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+          <div className="grid-3col">
             {types.map(({ key, icon, label, sub }) => {
               const active = value === key;
               return (
@@ -507,7 +522,7 @@
       ] : [];
 
       return (
-        <div style={{ fontFamily:"'DM Sans','Helvetica Neue',sans-serif", background:t.bg, color:t.text, padding:"28px 20px", minHeight:"100vh", boxSizing:"border-box", transition:"background 0.2s,color 0.2s" }}>
+        <div style={{ fontFamily:"'DM Sans','Helvetica Neue',sans-serif", background:t.bg, color:t.text, padding:"28px 16px", minHeight:"100vh", boxSizing:"border-box", transition:"background 0.2s,color 0.2s" }}>
           <div style={{ maxWidth:960, margin:"0 auto" }}>
 
             {/* Header */}
@@ -525,7 +540,7 @@
             <BuyerTypeSwitch value={buyerType} onChange={setBuyerType} t={t} />
 
             {/* Main sliders */}
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:32, background:t.surface, borderRadius:12, padding:"22px 24px", border:`1px solid ${t.border}`, marginBottom:16 }}>
+            <div className="grid-2col" style={{ background:t.surface, borderRadius:12, padding:"22px 24px", border:`1px solid ${t.border}`, marginBottom:16 }}>
               <Slider label="Max Capital Available" value={maxCapital} min={500000}  max={4000000} step={50000} onChange={setMaxCapital} display={fmtM} t={t} />
               <Slider label="Max Monthly Payment"   value={maxMonthly} min={5000}    max={30000}   step={500}   onChange={setMaxMonthly} display={v => "₪"+v.toLocaleString()} t={t} />
               <Slider label="Mortgage Rate" value={mortgageRate} min={1.0} max={8.0} step={0.05} onChange={setMortgageRate} display={v => v.toFixed(2)+"%"} t={t} />
@@ -542,7 +557,7 @@
                 </span>
               </button>
               {showClosing && (
-                <div style={{ background:t.surface, borderRadius:12, padding:"20px 24px", border:`1px solid ${t.border}`, marginTop:10, display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 32px" }}>
+                <div className="grid-closing" style={{ background:t.surface, borderRadius:12, padding:"20px 24px", border:`1px solid ${t.border}`, marginTop:10 }}>
                   <Slider label="Lawyer fee"       value={lawyerPct}  min={0.5} max={2}     step={0.1}  onChange={setLawyerPct}  display={v=>v.toFixed(1)+"% +VAT"} t={t} />
                   <Slider label="Agent fee"        value={agentPct}   min={0}   max={2}     step={0.1}  onChange={setAgentPct}   display={v=>v.toFixed(1)+"% +VAT"} t={t} />
                   <div>
@@ -595,7 +610,7 @@
 
             {/* Cards */}
             {cards.length>0 && (
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:12, marginBottom:24 }}>
+              <div className="grid-4col" style={{ marginBottom:24 }}>
                 {cards.map(({label,value,sub,color}) => (
                   <div key={label} style={{ background:t.surface, borderRadius:10, padding:"14px 16px", border:`1px solid ${t.border}` }}>
                     <div style={{ fontSize:10, color:t.textMid, marginBottom:4, textTransform:"uppercase", letterSpacing:"0.05em" }}>{label}</div>
