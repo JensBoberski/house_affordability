@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Israel Affordability Map</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; }
+    body { background: #f5f4f0; }
+    input[type=range] {
+      width: 100%;
+      cursor: pointer;
+      accent-color: #9a6c00;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Dependencies via CDN -->
+  <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+  <script crossorigin src="https://unpkg.com/recharts@2.9.3/umd/Recharts.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.23.6/babel.min.js"></script>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect } = React;
+
+    // ─── PERSISTENCE ────────────────────────────────────────────────────────
+    const STORE_KEY = "nadlan_affordability_v1";
+    function loadSaved() {
+      try { return JSON.parse(localStorage.getItem(STORE_KEY) || "{}"); }
+      catch { return {}; }
+    }
+    function s(key, def) { const v = loadSaved()[key]; return v !== undefined ? v : def; }
+    const {
+      ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid,
+      Tooltip, ReferenceLine, ResponsiveContainer, Legend
+    } = window.Recharts;
+
+    // ─── BUYER TYPES ─────────────────────────────────────────────────────────
+    // minDown: Bank of Israel LTV rules
+    // tax brackets: מס רכישה (purchase tax) 2024
+    const BUYER_TYPES = {
+      first: {
+        label: "First Home",
+        labelHeb: "דירה ראשונה",
+        minDown: 0.25,
+        brackets: [
+          { limit: 1978745,  rate: 0     },
+          { limit: 2347040,  rate: 0.035 },
+          { limit: 3054195,  rate: 0.05  },
+          { limit: 5872725,  rate: 0.08  },
+          { limit: Infinity, rate: 0.10  },
+        ],
+      },
+      upgrade: {
+        label: "Upgrading",
+        labelHeb: "משפרי דיור",
+        minDown: 0.30,
+        brackets: [
+          { limit: 1978745,  rate: 0     },
+          { limit: 2347040,  rate: 0.035 },
+          { limit: 3054195,  rate: 0.05  },
+          { limit: 5872725,  rate: 0.08  },
+          { limit: Infinity, rate: 0.10  },
+        ],
+      },
+      investor: {
+        label: "Investor / 2nd home",
+        labelHeb: "משקיע / דירה נוספת",
+        minDown: 0.50,
+        brackets: [
+          { limit: 5872725,  rate: 0.08 },
+          { limit: Infinity, rate: 0.10 },
+        ],
+      },
+    };
+
+    // ─── TAX ────────────────────────────────────────────────────────────────
+    function calcTax(price, brackets) {
+      let tax=0, prev=0;
+      for (const b of brackets) {
+        if (price<=prev) break;
+        const taxable = Math.min(price,b.limit)-prev;
+        if (taxable>0) tax += taxable*b.rate;
+        prev = b.limit;
+      }
+      return Math.round(tax);
+    }
+
+    function calcClosing(price, p = {}) {
+      const { lawyerPct=0.01, agentPct=0.01, brokerFee=20000, brokerFeePct=0.01, brokerFeeMode="flat", appraiser=4500, otherCosts=2500, brackets=BUYER_TYPES.first.brackets } = p;
+      // Broker fee: flat amount OR % of mortgage (price minus down payment)
+      // For closing cost calc we don't know the exact loan, so use price*(1-minDown) as proxy when in pct mode
+      // Caller passes resolvedBrokerFee if they know the exact loan
+      const resolvedBroker = p.resolvedBrokerFee != null
+        ? p.resolvedBrokerFee
+        : brokerFeeMode === "pct"
+          ? (p.loanAmount ?? price * 0.75) * brokerFeePct
+          : brokerFee;
+      return Math.round(
+        calcTax(price, brackets) +
+        price*lawyerPct*1.17 +
+        price*agentPct*1.17 +
+        resolvedBroker*1.17 +
+        appraiser +
+        otherCosts
+      );
+    }
+
+    function calcPurchaseTax(price, brackets) {
+      return calcTax(price, brackets || BUYER_TYPES.first.brackets);
+    }
+
+    function getAmort(rate, years) { const r=rate/12, n=years*12; return (r*Math.pow(1+r,n))/(Math.pow(1+r,n)-1); }
+    function calcMonthly(loan, rate, years) { return Math.round(loan*getAmort(rate, years)); }
+    function maxLoanFromMonthly(mo, rate, years) { return Math.round(mo/getAmort(rate, years)); }
+
+    function downPctForCapital(price, maxCapital, cp) {
+      const closing = calcClosing(price, cp);
+      const rem = maxCapital - closing;
+      if (rem<=0) return null;
+      return rem/price;
+    }
+
+    // ─── FORMATTERS ─────────────────────────────────────────────────────────
+    function fmtM(n)    { return "₪"+(n/1000000).toFixed(2)+"M"; }
+    function fmtM1(n)   { return "₪"+(n/1000000).toFixed(1)+"M"; }
+    function fmtFull(n) { return "₪"+Math.round(n).toLocaleString("en-IL"); }
+
+    // ─── THEMES ─────────────────────────────────────────────────────────────
+    const THEMES = {
+      light: {
+        bg:"#f5f4f0", surface:"#ffffff", border:"#dddbd6", borderLight:"#e8e6e2",
+        text:"#1a1a1a", textMid:"#666", textDim:"#999", textFaint:"#ccc",
+        accent:"#9a6c00", grid:"#eeece8", axis:"#dddbd6", maskFill:"#f5f4f0",
+        sliderAccent:"#9a6c00",
+        okBg:"rgba(40,160,80,0.12)", okBorder:"rgba(40,160,80,0.4)", okMonthly:"#1a6e30", okLoan:"#555",
+        dimMonthly:"#555", dimLoan:"#888",
+        illegalBg:"repeating-linear-gradient(45deg,rgba(200,40,40,0.05),rgba(200,40,40,0.05) 4px,transparent 4px,transparent 8px)",
+        illegalDash:"#bbb", tableHeader:"#f8f7f3", tableSticky:"#ffffff",
+        rowBorder:"#eceae6", colBorder:"#f0eeea", priceColor:"#9a6c00", priceDim:"#bbb",
+        ceilLabel:"#aaa", btnBorder:"#ccc", btnColor:"#666",
+      },
+      dark: {
+        bg:"#0f0f1a", surface:"#161626", border:"#252535", borderLight:"#1e1e30",
+        text:"#f0e8d8", textMid:"#888", textDim:"#555", textFaint:"#333",
+        accent:"#f0c070", grid:"#1e1e30", axis:"#252535", maskFill:"#0f0f1a",
+        sliderAccent:"#f0c070",
+        okBg:"rgba(80,200,120,0.12)", okBorder:"rgba(80,200,120,0.4)", okMonthly:"#f0c070", okLoan:"#aaa",
+        dimMonthly:"#aaa", dimLoan:"#999",
+        illegalBg:"repeating-linear-gradient(45deg,rgba(255,50,50,0.05),rgba(255,50,50,0.05) 4px,transparent 4px,transparent 8px)",
+        illegalDash:"#555", tableHeader:"#161626", tableSticky:"#161626",
+        rowBorder:"#1e1e30", colBorder:"#1a1a28", priceColor:"#f0c070", priceDim:"#555",
+        ceilLabel:"#444", btnBorder:"#333", btnColor:"#888",
+      },
+    };
+
+    // ─── SLIDER ─────────────────────────────────────────────────────────────
+    function Slider({ label, value, min, max, step, onChange, display, t }) {
+      return (
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", marginBottom: 5 }}>
+            <span style={{ fontSize:12, fontWeight:600, color:t.textMid }}>{label}</span>
+            <span style={{ fontSize:13, fontWeight:700, color:t.accent, fontFamily:"'DM Mono',monospace" }}>{display(value)}</span>
+          </div>
+          <input type="range" min={min} max={max} step={step} value={value}
+            onChange={e => onChange(Number(e.target.value))}
+            style={{ width:"100%", accentColor:t.sliderAccent, cursor:"pointer" }}
+          />
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:t.textDim, marginTop:2 }}>
+            <span>{display(min)}</span><span>{display(max)}</span>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── BUYER TYPE SWITCH ───────────────────────────────────────────────────
+    function BuyerTypeSwitch({ value, onChange, t }) {
+      const types = [
+        { key:"first",    icon:"🏠", label:"First Home",          sub:"דירה ראשונה · 25% min · 0% tax up to ₪2M" },
+        { key:"upgrade",  icon:"🔄", label:"Upgrading",            sub:"משפרי דיור · 30% min · same tax brackets" },
+        { key:"investor", icon:"📈", label:"Investor / 2nd home",  sub:"משקיע · 50% min · 8% tax from ₪1" },
+      ];
+      return (
+        <div style={{ marginBottom:16 }}>
+          <div style={{ fontSize:12, fontWeight:600, color:t.textMid, marginBottom:8 }}>Purchase type</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+            {types.map(({ key, icon, label, sub }) => {
+              const active = value === key;
+              return (
+                <button key={key} onClick={() => onChange(key)}
+                  style={{
+                    background: active ? t.accent : t.surface,
+                    border: `1px solid ${active ? t.accent : t.border}`,
+                    borderRadius: 10, padding:"10px 12px", cursor:"pointer",
+                    textAlign:"left", fontFamily:"'DM Sans',sans-serif",
+                    transition:"all 0.15s",
+                  }}>
+                  <div style={{ fontSize:16, marginBottom:3 }}>{icon}</div>
+                  <div style={{ fontSize:12, fontWeight:700, color: active ? "#fff" : t.text }}>{label}</div>
+                  <div style={{ fontSize:10, color: active ? "rgba(255,255,255,0.75)" : t.textDim, marginTop:2, lineHeight:1.4 }}>{sub}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── TOOLTIP ────────────────────────────────────────────────────────────
+    function ScenarioBlock({ downPct, price, color, title, cp, t }) {
+      if (downPct==null) return null;
+      const closing = calcClosing(price, cp);
+      const downAmt = Math.round(price*downPct);
+      const loanAmt = price-downAmt;
+      const mo = calcMonthly(loanAmt, cp.rate||0.048, cp.years||30);
+      const cashNeeded = downAmt+closing;
+      const row = (label, val, hi) => (
+        <div style={{ display:"contents" }}>
+          <span style={{ color:t.textDim }}>{label}</span>
+          <span style={{ textAlign:"right", color:hi?t.accent:t.text, fontWeight:hi?700:400 }}>{val}</span>
+        </div>
+      );
+      return (
+        <div style={{ marginBottom:8, paddingBottom:8, borderBottom:`1px solid ${t.border}` }}>
+          <div style={{ color, fontWeight:700, fontSize:12, marginBottom:5 }}>
+            {title} — {(downPct*100).toFixed(1)}% down
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"auto auto", gap:"3px 14px", fontSize:11, fontFamily:"'DM Mono',monospace" }}>
+            {row("down payment", fmtFull(downAmt))}
+            {row("closing costs", fmtFull(closing))}
+            {row("total cash", fmtFull(cashNeeded), true)}
+            {row("mortgage", fmtFull(loanAmt))}
+            {row("monthly", fmtFull(mo)+"/mo", true)}
+          </div>
+        </div>
+      );
+    }
+
+    function ChartTooltip({ active, payload, label, cp, moLoanConst, minDownPct, t }) {
+      if (!active||!payload?.length) return null;
+      const price = label;
+      const closing = calcClosing(price, cp);
+      const capEntry = payload.find(p => p.dataKey==="capitalDown");
+      const capLoan = capEntry?.value;
+      const lowerPct = capLoan!=null ? 1-capLoan/price : null;
+      const minLoan = price*(1-minDownPct);
+      const upperLoan = Math.min(moLoanConst, minLoan);
+      const upperPct = 1-upperLoan/price;
+      const floorLabel = (minDownPct*100).toFixed(0)+"% legal floor";
+      const upperLabel = moLoanConst<minLoan ? "Monthly ceiling" : floorLabel;
+      const upperColor = moLoanConst<minLoan ? "#e07060" : "#ff5555";
+      const isAccessible = capLoan!=null && upperLoan>=capLoan;
+      return (
+        <div style={{ background:t.surface, border:`1px solid ${t.border}`, borderRadius:10, padding:"12px 16px", fontSize:12, fontFamily:"'DM Mono',monospace", boxShadow:"0 4px 20px rgba(0,0,0,0.15)", minWidth:240 }}>
+          <div style={{ fontWeight:700, color:t.accent, marginBottom:10, fontSize:14, borderBottom:`1px solid ${t.border}`, paddingBottom:8 }}>
+            {fmtFull(price)}
+            <span style={{ fontSize:10, fontWeight:400, marginLeft:8, color:isAccessible?"#2d9a50":"#cc4444" }}>
+              {isAccessible ? "✓ affordable" : "✗ out of range"}
+            </span>
+          </div>
+          {lowerPct!=null && <ScenarioBlock downPct={lowerPct} price={price} color="#5090d0" title="Lower bound (capital)" cp={cp} t={t} />}
+          {upperPct!=null && <ScenarioBlock downPct={upperPct} price={price} color={upperColor} title={`Upper bound (${upperLabel})`} cp={cp} t={t} />}
+          {isAccessible && (
+            <div style={{ fontSize:10, color:t.textDim, marginTop:4, paddingTop:4, borderTop:`1px solid ${t.border}` }}>
+              loan range: {fmtFull(capLoan)} – {fmtFull(upperLoan)}<br/>
+              closing costs: {fmtFull(closing)}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function ChartTooltipWrapper({ cp, moLoanConst, minDownPct, t, ...rest }) {
+      return <ChartTooltip {...rest} cp={cp} moLoanConst={moLoanConst} minDownPct={minDownPct} t={t} />;
+    }
+
+    // ─── TABLE ───────────────────────────────────────────────────────────────
+    function AffordabilityTable({ maxCapital, maxMonthly, cp, maxAffordable, t, rate, years, minDownPct }) {
+      const moLoan = maxLoanFromMonthly(maxMonthly, rate, years);
+      const ceilPrice = maxAffordable ? Math.ceil(maxAffordable/100000)*100000 : 5000000;
+
+      const prices = [];
+      for (let p=ceilPrice-800000; p<=ceilPrice; p+=100000) if(p>0) prices.push(p);
+
+      let gMin=Infinity, gMax=0;
+      for (const price of prices) {
+        const closing = calcClosing(price, cp);
+        const minL = Math.max(0, price-(maxCapital-closing));
+        const maxL = Math.min(moLoan, price*(1-minDownPct));
+        if (minL<gMin) gMin=minL;
+        if (maxL>gMax) gMax=maxL;
+      }
+      const loanMin = Math.max(0, Math.floor(gMin/100000)*100000-200000);
+      const loanMax = Math.ceil(gMax/100000)*100000+100000;
+      const loans = [];
+      for (let l=loanMax; l>=loanMin; l-=100000) loans.push(l);
+
+      function classify(price, loan) {
+        const closing = calcClosing(price, cp);
+        const down = price-loan;
+        const downPct = down/price;
+        const totalCash = down+closing;
+        const mo = calcMonthly(loan, rate, years);
+        if (down<0) return { s:"invalid" };
+        if (downPct<minDownPct) return { s:"illegal", mo, totalCash };
+        if (totalCash>maxCapital) return { s:"cap", mo, totalCash };
+        if (mo>maxMonthly) return { s:"mo", mo, totalCash };
+        return { s:"ok", mo, totalCash };
+      }
+
+      const th = { padding:"9px 10px", textAlign:"center", fontSize:11, fontWeight:600, color:t.textMid, borderBottom:`2px solid ${t.border}`, whiteSpace:"nowrap", background:t.tableHeader };
+
+      return (
+        <div style={{ marginTop:28 }}>
+          <div style={{ fontSize:15, fontWeight:700, color:t.text, marginBottom:4 }}>Affordability Table</div>
+          <div style={{ fontSize:11, color:t.textMid, lineHeight:1.6, marginBottom:10 }}>
+            Each cell: total cash needed · monthly payment. &nbsp;
+            <span style={{ color:"#2d9a50", fontWeight:600 }}>■</span> green = affordable &nbsp;
+            <span style={{ color:"#5090d0" }}>■</span> blue-tint = over capital &nbsp;
+            <span style={{ color:"#c05040" }}>■</span> red-tint = monthly too high &nbsp;
+            <span style={{ color:"#cc4444" }}>▨</span> striped = illegal (&lt;{(minDownPct*100).toFixed(0)}% down)
+          </div>
+          <div style={{ overflowX:"auto", borderRadius:10, border:`1px solid ${t.border}` }}>
+            <table style={{ borderCollapse:"collapse", fontFamily:"'DM Mono',monospace", fontSize:11, width:"100%" }}>
+              <thead>
+                <tr>
+                  <th style={{ ...th, textAlign:"left", padding:"9px 12px", position:"sticky", left:0, zIndex:2, minWidth:90 }}>
+                    Mortgage ↓ / Price →
+                  </th>
+                  {prices.map(price => {
+                    const above = maxAffordable && price>maxAffordable;
+                    return (
+                      <th key={price} style={{ ...th, color:above?t.priceDim:t.priceColor }}>
+                        {fmtM1(price)}
+                        {above && <div style={{ fontSize:9, color:t.ceilLabel, fontWeight:400 }}>↑ ceiling</div>}
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {loans.map(loan => (
+                  <tr key={loan}>
+                    <td style={{ padding:"7px 12px", fontWeight:700, fontSize:12, whiteSpace:"nowrap", borderBottom:`1px solid ${t.rowBorder}`, color:t.textMid, background:t.tableSticky, position:"sticky", left:0, zIndex:1 }}>
+                      {fmtM1(loan)}
+                    </td>
+                    {prices.map(price => {
+                      const cell = classify(price, loan);
+                      if (cell.s==="invalid") return (
+                        <td key={price} style={{ padding:"5px 8px", textAlign:"center", borderBottom:`1px solid ${t.rowBorder}`, borderLeft:`1px solid ${t.colBorder}`, background:t.surface }}>
+                          <span style={{ color:t.textFaint }}>—</span>
+                        </td>
+                      );
+                      const isOk = cell.s==="ok";
+                      const isIllegal = cell.s==="illegal";
+                      const cellBg = isIllegal ? t.illegalBg
+                        : isOk ? t.okBg
+                        : cell.s==="cap" ? "rgba(80,144,208,0.07)"
+                        : "rgba(192,80,64,0.07)";
+                      return (
+                        <td key={price} style={{ padding:"5px 8px", textAlign:"center", borderBottom:`1px solid ${t.rowBorder}`, borderLeft:`1px solid ${t.colBorder}`, background:cellBg, outline:isOk?`1px solid ${t.okBorder}`:"none", outlineOffset:"-1px" }}>
+                          {isIllegal ? (
+                            <span style={{ color:t.illegalDash }}>—</span>
+                          ) : (
+                            <>
+                              <div style={{ color:isOk?t.okMonthly:t.dimMonthly, fontWeight:isOk?700:400 }}>{fmtFull(cell.totalCash)}</div>
+                              <div style={{ color:isOk?t.okLoan:t.dimLoan, fontSize:10, marginTop:1 }}>{fmtFull(cell.mo)}/mo</div>
+                            </>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── MAIN ────────────────────────────────────────────────────────────────
+    const ALL_PRICES = Array.from({length:293},(_,i)=>400000+i*50000);
+
+    function AffordabilityMap() {
+      const [theme, setTheme]               = useState(() => s("theme", "light"));
+      const t = THEMES[theme];
+      const [maxCapital, setMaxCapital]     = useState(() => s("maxCapital", 2000000));
+      const [maxMonthly, setMaxMonthly]     = useState(() => s("maxMonthly", 17000));
+      const [lawyerPct, setLawyerPct]       = useState(() => s("lawyerPct", 1.0));
+      const [agentPct, setAgentPct]         = useState(() => s("agentPct", 1.0));
+      const [brokerFee, setBrokerFee]       = useState(() => s("brokerFee", 20000));
+      const [brokerFeePct, setBrokerFeePct] = useState(() => s("brokerFeePct", 1.0));
+      const [brokerFeeMode, setBrokerFeeMode] = useState(() => s("brokerFeeMode", "flat"));
+      const [appraiser, setAppraiser]       = useState(() => s("appraiser", 4500));
+      const [otherCosts, setOtherCosts]     = useState(() => s("otherCosts", 2500));
+      const [mortgageRate, setMortgageRate] = useState(() => s("mortgageRate", 4.75));
+      const [mortgageYears, setMortgageYears] = useState(() => s("mortgageYears", 30));
+      const [showClosing, setShowClosing]   = useState(() => s("showClosing", true));
+      const [buyerType, setBuyerType]       = useState(() => s("buyerType", "first"));
+
+      // Save all values to localStorage whenever any change
+      useEffect(() => {
+        try {
+          localStorage.setItem(STORE_KEY, JSON.stringify({
+            theme, maxCapital, maxMonthly, lawyerPct, agentPct,
+            brokerFee, brokerFeePct, brokerFeeMode, appraiser, otherCosts,
+            mortgageRate, mortgageYears, showClosing, buyerType,
+          }));
+        } catch {}
+      }, [theme, maxCapital, maxMonthly, lawyerPct, agentPct,
+          brokerFee, brokerFeePct, brokerFeeMode, appraiser, otherCosts,
+          mortgageRate, mortgageYears, showClosing, buyerType]);
+
+      const btype = BUYER_TYPES[buyerType];
+      const minDownPct = btype.minDown;
+      const rate = mortgageRate/100;
+      const cp = { lawyerPct:lawyerPct/100, agentPct:agentPct/100, brokerFee, brokerFeePct:brokerFeePct/100, brokerFeeMode, appraiser, otherCosts, rate, years:mortgageYears, brackets:btype.brackets };
+      const moLoanConst = maxLoanFromMonthly(maxMonthly, rate, mortgageYears);
+
+      const chartData = ALL_PRICES.map(price => {
+        const capDown = downPctForCapital(price, maxCapital, cp);
+        const capLoan = capDown!=null && capDown>=0.05 && capDown<=0.95 ? Math.round(price*(1-capDown)) : null;
+        const moDown = 1-moLoanConst/price;
+        const minDownLoan = Math.round(price*(1-minDownPct));
+        return {
+          price, capPct:capDown, moPct:moDown,
+          capitalDown: capLoan,
+          monthlyDown: moLoanConst,
+          minDownLoan,
+          forbiddenTop: Math.max(moLoanConst * 1.3, 6000000),
+          accessibleLower: capLoan ?? 0,
+          accessibleUpper: Math.min(moLoanConst,minDownLoan),
+        };
+      });
+
+      let intersectionPrice = null, intersectionDown = null;
+      for (let i=1; i<chartData.length; i++) {
+        const prev = chartData[i-1], curr = chartData[i];
+        const prevLower = prev.accessibleLower ?? 0;
+        const prevUpper = prev.accessibleUpper ?? 0;
+        const currLower = curr.accessibleLower ?? 0;
+        const currUpper = curr.accessibleUpper ?? 0;
+        const prevFeasible = prevUpper >= prevLower;
+        const currFeasible = currUpper >= currLower;
+        if (prevFeasible && !currFeasible) {
+          const prevGap = prevUpper - prevLower;
+          const currGap  = currUpper  - currLower;
+          const tVal = prevGap / (prevGap - currGap);
+          const exactPrice = prev.price + tVal * (curr.price - prev.price);
+          intersectionPrice = exactPrice;
+          const closing = calcClosing(exactPrice, cp);
+          const capDown = Math.max(0, exactPrice - (maxCapital - closing)) / exactPrice;
+          const moDown  = 1 - moLoanConst / exactPrice;
+          intersectionDown = Math.max(capDown, moDown, minDownPct);
+          break;
+        }
+      }
+      const maxAffordable = intersectionPrice;
+      const ceilPrice = maxAffordable ? Math.ceil(maxAffordable/100000)*100000 : 5000000;
+
+      const tablePrices = [];
+      for (let p=ceilPrice-900000; p<=ceilPrice+100000; p+=100000) if(p>0) tablePrices.push(p);
+
+      let tGlobalMinLoan=Infinity, tGlobalMaxLoan=0;
+      for (const price of tablePrices) {
+        const closing = calcClosing(price, cp);
+        const minL = Math.max(0, price-(maxCapital-closing));
+        const maxL = Math.min(moLoanConst, price*(1-minDownPct));
+        if (minL<tGlobalMinLoan) tGlobalMinLoan=minL;
+        if (maxL>tGlobalMaxLoan) tGlobalMaxLoan=maxL;
+      }
+      const tLoanMin = Math.max(0, Math.floor(tGlobalMinLoan/100000)*100000-200000);
+      const tLoanMax = Math.ceil(tGlobalMaxLoan/100000)*100000+100000;
+
+      const xMin = tablePrices[0];
+      const xMax = tablePrices[tablePrices.length-1];
+      const yMin = tLoanMin;
+      const yMax = tLoanMax;
+
+      const filteredChartData = chartData
+        .filter(d => d.price >= xMin && d.price <= xMax)
+        .map(d => ({ ...d, forbiddenTop: yMax }));
+
+      const ceilClosing2   = maxAffordable ? calcClosing(maxAffordable, cp) : null;
+      const ceilDownAmt    = maxAffordable && ceilClosing2!=null ? Math.round(maxCapital - ceilClosing2) : null;
+      const ceilMortgage   = maxAffordable && ceilDownAmt!=null ? Math.round(maxAffordable - ceilDownAmt) : null;
+      const ceilMonthly    = ceilMortgage ? calcMonthly(ceilMortgage, rate, mortgageYears) : null;
+      const ceilTax        = maxAffordable ? calcPurchaseTax(maxAffordable, btype.brackets) : null;
+      const ceilClosingAll = maxAffordable ? calcClosing(maxAffordable, cp) : null;
+
+      const cards = maxAffordable ? [
+        { label:"Max Affordable Price",  value:"₪"+(maxAffordable/1000000).toFixed(3)+"M",
+          sub:"exact ceiling",            color:t.accent },
+        { label:"Mortgage at Ceiling",   value:ceilMortgage ? fmtFull(ceilMortgage) : "—",
+          sub:ceilDownAmt && maxAffordable ? "down: "+fmtFull(ceilDownAmt)+" ("+(ceilDownAmt/maxAffordable*100).toFixed(1)+"%)" : "", color:"#5090d0" },
+        { label:"Monthly Payment",       value:ceilMonthly ? fmtFull(ceilMonthly)+"/mo" : "—",
+          sub:mortgageYears+"yr @ "+mortgageRate.toFixed(2)+"%", color:"#e07060" },
+        { label:"Closing Costs",         value:ceilClosingAll ? fmtFull(ceilClosingAll) : "—",
+          sub:"incl. tax "+fmtFull(ceilTax??0)+" (מס רכישה)", color:"#c05040" },
+      ] : [];
+
+      return (
+        <div style={{ fontFamily:"'DM Sans','Helvetica Neue',sans-serif", background:t.bg, color:t.text, padding:"28px 20px", minHeight:"100vh", boxSizing:"border-box", transition:"background 0.2s,color 0.2s" }}>
+          <div style={{ maxWidth:960, margin:"0 auto" }}>
+
+            {/* Header */}
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:24 }}>
+              <div>
+                <h1 style={{ fontSize:21, fontWeight:700, margin:"0 0 5px 0", letterSpacing:"-0.3px", color:t.text }}>Affordability Map</h1>
+                <p style={{ fontSize:12, color:t.textMid, margin:0 }}>Set your constraints — the intersection is your ceiling.</p>
+              </div>
+              <button onClick={() => setTheme(th => th==="dark"?"light":"dark")} style={{ background:"none", border:`1px solid ${t.btnBorder}`, borderRadius:20, color:t.btnColor, fontSize:12, padding:"5px 14px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", marginTop:2, flexShrink:0 }}>
+                {theme==="dark" ? "☀ Light" : "☾ Dark"}
+              </button>
+            </div>
+
+            {/* Buyer type */}
+            <BuyerTypeSwitch value={buyerType} onChange={setBuyerType} t={t} />
+
+            {/* Main sliders */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:32, background:t.surface, borderRadius:12, padding:"22px 24px", border:`1px solid ${t.border}`, marginBottom:16 }}>
+              <Slider label="Max Capital Available" value={maxCapital} min={500000}  max={4000000} step={50000} onChange={setMaxCapital} display={fmtM} t={t} />
+              <Slider label="Max Monthly Payment"   value={maxMonthly} min={5000}    max={30000}   step={500}   onChange={setMaxMonthly} display={v => "₪"+v.toLocaleString()} t={t} />
+              <Slider label="Mortgage Rate" value={mortgageRate} min={1.0} max={8.0} step={0.05} onChange={setMortgageRate} display={v => v.toFixed(2)+"%"} t={t} />
+              <Slider label="Mortgage Term (years)" value={mortgageYears} min={10} max={30} step={1} onChange={setMortgageYears} display={v => v+"yr"} t={t} />
+            </div>
+
+            {/* Closing costs toggle */}
+            <div style={{ marginBottom:20 }}>
+              <button onClick={() => setShowClosing(s=>!s)} style={{ background:"none", border:`1px solid ${t.btnBorder}`, borderRadius:8, color:t.btnColor, fontSize:12, padding:"6px 14px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", display:"flex", alignItems:"center", gap:6 }}>
+                <span>{showClosing?"▾":"▸"}</span>
+                Closing cost assumptions
+                <span style={{ color:t.textDim, marginLeft:4, fontFamily:"'DM Mono',monospace" }}>
+                  ({fmtM(calcClosing(4750000, { ...cp, loanAmount: 4750000*0.75 }))} @ ₪4.75M)
+                </span>
+              </button>
+              {showClosing && (
+                <div style={{ background:t.surface, borderRadius:12, padding:"20px 24px", border:`1px solid ${t.border}`, marginTop:10, display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 32px" }}>
+                  <Slider label="Lawyer fee"       value={lawyerPct}  min={0.5} max={2}     step={0.1}  onChange={setLawyerPct}  display={v=>v.toFixed(1)+"% +VAT"} t={t} />
+                  <Slider label="Agent fee"        value={agentPct}   min={0}   max={2}     step={0.1}  onChange={setAgentPct}   display={v=>v.toFixed(1)+"% +VAT"} t={t} />
+                  <div>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                      <span style={{ fontSize:12, fontWeight:600, color:t.textMid }}>Mortgage broker</span>
+                      <div style={{ display:"flex", gap:0, borderRadius:6, overflow:"hidden", border:`1px solid ${t.border}` }}>
+                        {["flat","pct"].map(mode => (
+                          <button key={mode} onClick={() => setBrokerFeeMode(mode)}
+                            style={{ padding:"3px 10px", fontSize:11, cursor:"pointer", fontFamily:"'DM Sans',sans-serif", border:"none",
+                              background: brokerFeeMode===mode ? t.accent : t.surface,
+                              color: brokerFeeMode===mode ? "#fff" : t.textMid,
+                              fontWeight: brokerFeeMode===mode ? 700 : 400,
+                            }}>
+                            {mode==="flat" ? "₪ flat" : "% loan"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {brokerFeeMode==="flat" ? (
+                      <>
+                        <input type="range" min={0} max={40000} step={1000} value={brokerFee}
+                          onChange={e => setBrokerFee(Number(e.target.value))}
+                          style={{ width:"100%", accentColor:t.sliderAccent, cursor:"pointer" }} />
+                        <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:t.textDim, marginTop:2 }}>
+                          <span>₪0</span>
+                          <span style={{ fontSize:12, fontWeight:700, color:t.accent, fontFamily:"'DM Mono',monospace" }}>{"₪"+brokerFee.toLocaleString()+" +VAT"}</span>
+                          <span>₪40,000</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <input type="range" min={0} max={2} step={0.1} value={brokerFeePct}
+                          onChange={e => setBrokerFeePct(Number(e.target.value))}
+                          style={{ width:"100%", accentColor:t.sliderAccent, cursor:"pointer" }} />
+                        <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:t.textDim, marginTop:2 }}>
+                          <span>0%</span>
+                          <span style={{ fontSize:12, fontWeight:700, color:t.accent, fontFamily:"'DM Mono',monospace" }}>{brokerFeePct.toFixed(1)+"% of mortgage +VAT"}</span>
+                          <span>2%</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <Slider label="Appraiser"        value={appraiser}  min={0}   max={15000} step={500}  onChange={setAppraiser}  display={v=>"₪"+v.toLocaleString()} t={t} />
+                  <div style={{ gridColumn:"1/-1" }}>
+                    <Slider label="Other (Tabu, notary, inspector, renovations…)" value={otherCosts} min={0} max={200000} step={1000} onChange={setOtherCosts} display={v=>"₪"+v.toLocaleString()} t={t} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Cards */}
+            {cards.length>0 && (
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:12, marginBottom:24 }}>
+                {cards.map(({label,value,sub,color}) => (
+                  <div key={label} style={{ background:t.surface, borderRadius:10, padding:"14px 16px", border:`1px solid ${t.border}` }}>
+                    <div style={{ fontSize:10, color:t.textMid, marginBottom:4, textTransform:"uppercase", letterSpacing:"0.05em" }}>{label}</div>
+                    <div style={{ fontSize:18, fontWeight:700, color, fontFamily:"'DM Mono',monospace" }}>{value}</div>
+                    <div style={{ fontSize:10, color:t.textDim, marginTop:3 }}>{sub}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Table */}
+            <AffordabilityTable maxCapital={maxCapital} maxMonthly={maxMonthly} cp={cp} maxAffordable={maxAffordable} t={t} rate={rate} years={mortgageYears} minDownPct={minDownPct} />
+
+            {/* Chart */}
+            <div style={{ fontSize:15, fontWeight:700, color:t.text, margin:"28px 0 10px" }}>Affordability Chart</div>
+            <div style={{ background:t.surface, borderRadius:12, padding:"20px 8px 16px 4px", border:`1px solid ${t.border}` }}>
+              <ResponsiveContainer width="100%" height={380}>
+                <ComposedChart data={filteredChartData} margin={{ top:10, right:30, left:10, bottom:20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={t.grid} />
+                  <XAxis dataKey="price" type="number" domain={[xMin, xMax]}
+                    tickFormatter={v=>fmtM1(v)}
+                    tick={{ fill:t.textDim, fontSize:11, fontFamily:"'DM Mono',monospace" }}
+                    axisLine={{ stroke:t.axis }} tickLine={false}
+                    label={{ value:"House Price", position:"insideBottom", offset:-14, fill:t.textDim, fontSize:11 }}
+                  />
+                  <YAxis tickFormatter={v=>fmtM(v)} domain={[yMin, yMax]}
+                    tick={{ fill:t.textDim, fontSize:11, fontFamily:"'DM Mono',monospace" }}
+                    axisLine={{ stroke:t.axis }} tickLine={false} width={80}
+                    label={{ value:"Mortgage Size (₪)", angle:-90, position:"insideLeft", offset:16, fill:t.textDim, fontSize:11 }}
+                  />
+                  <Tooltip content={<ChartTooltipWrapper cp={cp} moLoanConst={moLoanConst} minDownPct={minDownPct} t={t} />} />
+
+                  <Area type="monotone" dataKey="forbiddenTop" stroke="none" fill="#ee3333" fillOpacity={0.07} legendType="none" tooltipType="none" isAnimationActive={false} />
+                  <Area type="monotone" dataKey="minDownLoan"  stroke="none" fill={t.maskFill} fillOpacity={1} legendType="none" tooltipType="none" isAnimationActive={false} />
+                  <Area type="monotone" dataKey="accessibleUpper" stroke="none" fill="#40b870" fillOpacity={0.15} legendType="none" tooltipType="none" isAnimationActive={false} />
+                  <Area type="monotone" dataKey="accessibleLower" stroke="none" fill={t.maskFill} fillOpacity={1} legendType="none" tooltipType="none" isAnimationActive={false} />
+
+                  {maxAffordable && (
+                    <ReferenceLine x={maxAffordable} stroke={t.accent} strokeWidth={1.5} strokeDasharray="6 3"
+                      label={{ value:"ceiling", position:"top", fill:t.accent, fontSize:11, fontFamily:"'DM Mono',monospace" }}
+                    />
+                  )}
+
+                  <Line type="monotone" dataKey="capitalDown" stroke="#5090d0" strokeWidth={2.5} dot={false} name="Max capital"     connectNulls={false} />
+                  <Line type="monotone" dataKey="monthlyDown" stroke="#e07060" strokeWidth={2.5} dot={false} name="Max monthly"     connectNulls={false} />
+                  <Line type="monotone" dataKey="minDownLoan" stroke="#ff5555" strokeWidth={1.5} strokeDasharray="4 3" dot={false} name={`${(minDownPct*100).toFixed(0)}% legal floor`} connectNulls={false} />
+
+                  <Legend wrapperStyle={{ paddingTop:16, fontSize:12 }}
+                    formatter={value => <span style={{ color:t.textMid, fontSize:12, fontFamily:"'DM Sans',sans-serif" }}>{value}</span>}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Reading guide */}
+            <div style={{ marginTop:16, padding:"12px 16px", borderRadius:10, background:t.surface, border:`1px solid ${t.border}`, fontSize:12, color:t.textMid, lineHeight:1.7 }}>
+              <span style={{ color:"#5090d0", fontWeight:600 }}>Blue</span> — max loan your capital allows (rises with price).{" "}
+              <span style={{ color:"#e07060", fontWeight:600 }}>Red solid</span> — max loan your monthly budget allows (flat).{" "}
+              <span style={{ color:"#ff5555", fontWeight:600 }}>Red dashed</span> — {(minDownPct*100).toFixed(0)}% legal floor (slopes up with price).{" "}
+              <span style={{ color:"#40b870", fontWeight:600 }}>Green zone</span> — accessible: above capital floor, below both ceilings.
+            </div>
+
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<AffordabilityMap />);
+  </script>
+</body>
+</html>
