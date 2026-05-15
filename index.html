@@ -29,7 +29,7 @@
       .grid-4col      { grid-template-columns: 1fr 1fr; gap: 8px; }
       .grid-closing   { grid-template-columns: 1fr; gap: 0; }
       .hide-mobile    { display: none !important; }
-      .table-mortgage-col { min-width: 44px !important; padding: 7px 5px !important; font-size: 10px !important; }
+      .table-mortgage-col { min-width: 44px !important; padding: 7px 5px !important; }
     }
   </style>
 </head>
@@ -348,7 +348,7 @@
             <table style={{ borderCollapse:"collapse", fontFamily:"'DM Mono',monospace", fontSize:11, width:"100%" }}>
               <thead>
                 <tr>
-                  <th className="table-mortgage-col" style={{ ...th, textAlign:"left", padding:"9px 6px", position:"sticky", left:0, zIndex:2, minWidth:44, fontSize:10, whiteSpace:"nowrap" }}>
+                  <th className="table-mortgage-col" style={{ ...th, textAlign:"left", padding:"9px 6px", position:"sticky", left:0, zIndex:2, minWidth:44, whiteSpace:"nowrap" }}>
                     ₪M ↓
                   </th>
                   {prices.map(price => {
@@ -365,7 +365,7 @@
               <tbody>
                 {loans.map(loan => (
                   <tr key={loan}>
-                    <td className="table-mortgage-col" style={{ padding:"7px 6px", fontWeight:700, fontSize:11, whiteSpace:"nowrap", borderBottom:`1px solid ${t.rowBorder}`, color:t.textMid, background:t.tableSticky, position:"sticky", left:0, zIndex:1 }}>
+                    <td className="table-mortgage-col" style={{ padding:"7px 6px", fontWeight:700, fontSize:12, whiteSpace:"nowrap", borderBottom:`1px solid ${t.rowBorder}`, color:t.textMid, background:t.tableSticky, position:"sticky", left:0, zIndex:1 }}>
                       {fmtM1(loan)}
                     </td>
                     {prices.map(price => {
