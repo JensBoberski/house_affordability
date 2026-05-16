@@ -70,14 +70,26 @@
       },
     };
 
+    // ─── BoI RULES (effective Jan 2021) ─────────────────────────────────────
+    // • All variable tracks combined: max 2/3 (66.7%)
+    //   Variable = prime, מל"צ, מצ"מ (any track that resets or floats)
+    // • Fixed tracks combined: minimum 1/3 (33.3%)
+    //   Fixed = קל"צ, קצ"מ (rate locked for term, even if CPI-linked)
+    // • No individual per-track cap beyond the aggregate variable limit
+    // Source: BoI directive effective 17 Jan 2021
+    const VARIABLE_TRACKS = ["prime", "malatz"];
+    const FIXED_TRACKS    = ["klatz", "katzam"];
+    const MAX_VARIABLE    = 67; // % — rounded up from 66.7 for UX
+    const MIN_FIXED       = 33; // % — rounded down from 33.3 for UX
+
     // ─── TRACK DEFINITIONS ───────────────────────────────────────────────────
     const TRACKS = [
       {
         key: "prime",
+        variable: true,
         name: "Prime (פריים)",
         nameHeb: "ריבית פריים",
         color: "#5090d0",
-        cap: 1/3,
         pros: [
           "Benefits immediately when Bank of Israel cuts rates",
           "Historically the cheapest track over long periods",
@@ -86,16 +98,16 @@
         cons: [
           "Unpredictable — payment changes every BoI decision (every 6 weeks)",
           "Currently high — BoI rate is elevated post-2022",
-          "Bank of Israel caps this at 1/3 of total mortgage",
+          "Counts toward the 2/3 variable cap alongside מל\"צ",
         ],
         bestFor: "Buyers who can absorb payment volatility and expect rates to fall",
       },
       {
         key: "klatz",
+        variable: false,
         name: 'Fixed unlinked (קל"צ)',
         nameHeb: "קבועה לא צמודה",
         color: "#e07060",
-        cap: 1,
         pros: [
           "Total certainty — payment never changes for the full term",
           "No inflation risk — principal is always fixed in NIS",
@@ -110,14 +122,14 @@
       },
       {
         key: "katzam",
+        variable: false,
         name: 'Fixed CPI-linked (קצ"מ)',
         nameHeb: "קבועה צמודה מדד",
         color: "#c070c0",
-        cap: 1,
         pros: [
           "Lower nominal rate than fixed unlinked",
           "Good value when inflation is low (2–3%)",
-          "Fixed rate so no exposure to BoI decisions",
+          "Counts as fixed — helps meet the 1/3 minimum",
         ],
         cons: [
           "Principal grows with CPI — you owe more in NIS over time",
@@ -128,10 +140,10 @@
       },
       {
         key: "malatz",
+        variable: true,
         name: 'Variable unlinked (מל"צ)',
         nameHeb: "משתנה לא צמודה",
         color: "#e0a030",
-        cap: 1,
         pros: [
           "Lower initial rate than fixed unlinked",
           "No inflation linkage — principal stays fixed",
@@ -345,7 +357,8 @@
               <span style={{ color: track.color, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{pct}%</span>
             </div>
             <SliderTrack value={pct} min={0} max={maxPct} step={1} onChange={v => onPctChange(track.key, v)} accent={track.color} />
-            {isPrime && <div style={{ fontSize:10, color:t.textDim, marginTop:2 }}>Bank of Israel cap: max 33%</div>}
+            {TRACKS.find(tr=>tr.key===track.key)?.variable && <div style={{ fontSize:10, color:t.textDim, marginTop:2 }}>Variable track — counts toward 2/3 aggregate cap</div>}
+            {!TRACKS.find(tr=>tr.key===track.key)?.variable && <div style={{ fontSize:10, color:t.textDim, marginTop:2 }}>Fixed track — counts toward 1/3 minimum</div>}
           </div>
 
           {/* Rate slider(s) */}
@@ -444,14 +457,20 @@
         setPcts(prev => {
           const others = Object.entries(prev).filter(([k]) => k !== key);
           const otherSum = others.reduce((s,[,v])=>s+v, 0);
-          const maxAllowed = key==="prime" ? 33 : 100;
-          const clamped = Math.min(newVal, maxAllowed, 100 - otherSum);
+          const clamped = Math.min(newVal, 100 - otherSum);
           return { ...prev, [key]: Math.max(0, clamped) };
         });
       }
 
-      const totalPct = Object.values(pcts).reduce((s,v)=>s+v,0);
-      const remaining = 100 - totalPct;
+      const totalPct      = Object.values(pcts).reduce((s,v)=>s+v,0);
+      const remaining     = 100 - totalPct;
+      const variablePct   = VARIABLE_TRACKS.reduce((s,k) => s + (pcts[k]||0), 0);
+      const fixedPct      = FIXED_TRACKS.reduce((s,k)    => s + (pcts[k]||0), 0);
+      const boiCompliant  = totalPct === 100 && variablePct <= MAX_VARIABLE && fixedPct >= MIN_FIXED;
+      const boiWarnings   = totalPct === 100 ? [
+        variablePct > MAX_VARIABLE ? `Variable tracks total ${variablePct}% — BoI limit is ${MAX_VARIABLE}% (prime + מל"צ combined)` : null,
+        fixedPct < MIN_FIXED       ? `Fixed tracks total ${fixedPct}% — BoI minimum is ${MIN_FIXED}% (קל"צ + קצ"מ combined)` : null,
+      ].filter(Boolean) : [];
 
       // Calculations
       const payments = TRACKS.map(tr => {
@@ -530,11 +549,32 @@
             {/* Allocation warning */}
             {Math.abs(remaining) > 0 && (
               <div style={{ background: remaining>0 ? t.warnBg : t.errorBg, border:`1px solid ${remaining>0 ? t.warnBorder : t.errorBorder}`,
-                borderRadius:10, padding:"10px 16px", marginBottom:16, fontSize:13,
+                borderRadius:10, padding:"10px 16px", marginBottom:12, fontSize:13,
                 color: remaining>0 ? t.warnText : t.errorText }}>
                 {remaining>0
                   ? `${remaining}% of loan unallocated — adjust track shares below to reach 100%`
                   : `Tracks sum to ${totalPct}% — reduce one track to fix`}
+              </div>
+            )}
+
+            {/* BoI compliance banner */}
+            {totalPct === 100 && (
+              <div style={{
+                background: boiCompliant ? t.prosBg : t.errorBg,
+                border: `1px solid ${boiCompliant ? t.prosLabel : t.errorBorder}`,
+                borderRadius:10, padding:"10px 16px", marginBottom:16,
+              }}>
+                <div style={{ fontSize:13, fontWeight:600, color: boiCompliant ? t.prosLabel : t.errorText, marginBottom: boiWarnings.length ? 6 : 0 }}>
+                  {boiCompliant
+                    ? `✓ Complies with BoI rules — ${fixedPct}% fixed (min 33%), ${variablePct}% variable (max 67%)`
+                    : "✗ Does not comply with Bank of Israel mortgage rules"}
+                </div>
+                {boiWarnings.map(w => (
+                  <div key={w} style={{ fontSize:12, color:t.errorText, marginTop:3 }}>• {w}</div>
+                ))}
+                <div style={{ fontSize:10, color:t.textDim, marginTop:6 }}>
+                  BoI directive effective Jan 2021: min 1/3 fixed (קל"צ + קצ"מ), max 2/3 variable (פריים + מל"צ combined)
+                </div>
               </div>
             )}
 
