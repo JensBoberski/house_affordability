@@ -525,6 +525,51 @@
       );
     }
 
+    // ─── DEAL PRICE INPUT ───────────────────────────────────────────────────
+    function DealPriceInput({ value, onChange, t }) {
+      const [editing, setEditing] = React.useState(false);
+      const [draft, setDraft]     = React.useState("");
+      const committed             = React.useRef(false);
+
+      function startEdit() {
+        committed.current = false;
+        setDraft(String(value));
+        setEditing(true);
+      }
+      function commit() {
+        if (committed.current) { setEditing(false); return; }
+        committed.current = true;
+        const n = parseFloat(String(draft).replace(/[^\d.]/g,""));
+        if (!isNaN(n) && n > 0) onChange(Math.round(n));
+        setEditing(false);
+      }
+      function onKey(e) {
+        if (e.key==="Enter") commit();
+        if (e.key==="Escape") { committed.current=true; setEditing(false); }
+      }
+      return (
+        <div>
+          <div style={{ fontSize:12, fontWeight:600, color:t.textMid, marginBottom:8 }}>Target property price</div>
+          <div style={{ display:"flex", alignItems:"baseline", gap:10 }}>
+            {editing ? (
+              <input autoFocus type="text" inputMode="numeric" value={draft}
+                onChange={e=>setDraft(e.target.value)} onBlur={commit} onKeyDown={onKey}
+                style={{ fontSize:32, fontWeight:700, color:t.accent, fontFamily:"'DM Mono',monospace",
+                  border:"none", borderBottom:`2px solid ${t.accent}`, outline:"none",
+                  background:"transparent", width:"100%", maxWidth:320 }} />
+            ) : (
+              <span onClick={startEdit} style={{ fontSize:32, fontWeight:700, color:t.accent,
+                fontFamily:"'DM Mono',monospace", cursor:"pointer",
+                textDecoration:"underline", textUnderlineOffset:4 }}>
+                ₪{value.toLocaleString()}
+              </span>
+            )}
+            {!editing && <span style={{ fontSize:13, color:t.textDim }}>tap to change</span>}
+          </div>
+        </div>
+      );
+    }
+
     // ─── MAIN ────────────────────────────────────────────────────────────────
     const ALL_PRICES = Array.from({length:293},(_,i)=>400000+i*50000);
 
@@ -545,12 +590,14 @@
       const [mortgageYears, setMortgageYears] = useState(() => s("mortgageYears", 30));
       const [showClosing, setShowClosing]   = useState(() => s("showClosing", true));
       const [buyerType, setBuyerType]       = useState(() => s("buyerType", "first"));
+      const [mode, setMode]                 = useState(() => s("mode", "ceiling"));
+      const [dealPrice, setDealPrice]       = useState(() => s("dealPrice", 3000000));
       const [copied, setCopied]             = useState(false);
 
       function shareScenario() {
         const state = { theme, maxCapital, maxMonthly, lawyerPct, agentPct,
           brokerFee, brokerFeePct, brokerFeeMode, appraiser, otherCosts, renovations,
-          mortgageRate, mortgageYears, showClosing, buyerType };
+          mortgageRate, mortgageYears, showClosing, buyerType, mode, dealPrice };
         const url = buildShareUrl(state);
         navigator.clipboard.writeText(url).then(() => {
           setCopied(true);
@@ -564,12 +611,12 @@
           localStorage.setItem(STORE_KEY, JSON.stringify({
             theme, maxCapital, maxMonthly, lawyerPct, agentPct,
             brokerFee, brokerFeePct, brokerFeeMode, appraiser, otherCosts, renovations,
-            mortgageRate, mortgageYears, showClosing, buyerType,
+            mortgageRate, mortgageYears, showClosing, buyerType, mode, dealPrice,
           }));
         } catch {}
       }, [theme, maxCapital, maxMonthly, lawyerPct, agentPct,
           brokerFee, brokerFeePct, brokerFeeMode, appraiser, otherCosts, renovations,
-          mortgageRate, mortgageYears, showClosing, buyerType]);
+          mortgageRate, mortgageYears, showClosing, buyerType, mode, dealPrice]);
 
       const btype = BUYER_TYPES[buyerType];
       const minDownPct = btype.minDown;
@@ -651,6 +698,27 @@
       const ceilTotalPaid    = ceilMonthly ? ceilMonthly * 12 * mortgageYears : null;
       const ceilTotalInterest = ceilTotalPaid && ceilMortgage ? Math.round(ceilTotalPaid - ceilMortgage) : null;
 
+      // ── Deal Check calculations ──────────────────────────────────────────────
+      const dealClosing      = calcClosing(dealPrice, cp);
+      const dealMinDown      = Math.round(dealPrice * minDownPct);
+      const dealMaxLoan      = Math.round(dealPrice * (1 - minDownPct));
+      const dealLoanFromMo   = maxLoanFromMonthly(maxMonthly, rate, mortgageYears);
+      const dealLoan         = Math.min(dealMaxLoan, dealLoanFromMo);
+      const dealDown         = dealPrice - dealLoan;
+      const dealCapNeeded    = dealDown + dealClosing;
+      const dealMonthly      = calcMonthly(dealLoan, rate, mortgageYears);
+      const dealTotalPaid    = dealMonthly * 12 * mortgageYears;
+      const dealTotalInterest = Math.round(dealTotalPaid - dealLoan);
+      const dealCapGap       = dealCapNeeded - maxCapital;
+      const dealMoGap        = dealMonthly - maxMonthly;
+      const dealLegalDown    = dealLoan > dealMaxLoan;
+      const dealFeasible     = dealCapGap <= 0 && dealMoGap <= 0 && !dealLegalDown;
+      const dealWarnings     = [
+        dealCapGap  > 0 ? `₪${Math.round(dealCapGap).toLocaleString()} short on capital` : null,
+        dealMoGap   > 0 ? `₪${Math.round(dealMoGap).toLocaleString()}/mo over monthly budget` : null,
+        dealLegalDown       ? `Minimum ${(minDownPct*100).toFixed(0)}% down required (₪${dealMinDown.toLocaleString()})` : null,
+      ].filter(Boolean);
+
       const cards = maxAffordable ? [
         { label:"Max Affordable Price",  value:"₪"+(maxAffordable/1000000).toFixed(3)+"M",
           sub:"exact ceiling",            color:t.accent },
@@ -669,10 +737,12 @@
           <div style={{ maxWidth:960, margin:"0 auto" }}>
 
             {/* Header */}
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:24 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
               <div>
                 <h1 style={{ fontSize:21, fontWeight:700, margin:"0 0 5px 0", letterSpacing:"-0.3px", color:t.text }}>Affordability Map</h1>
-                <p style={{ fontSize:12, color:t.textMid, margin:0 }}>Set your constraints — the intersection is your ceiling.</p>
+                <p style={{ fontSize:12, color:t.textMid, margin:0 }}>
+                  {mode==="ceiling" ? "Set your constraints — the intersection is your ceiling." : "Enter a target price — see what you need and whether it works."}
+                </p>
               </div>
               <div style={{ display:"flex", gap:8, alignItems:"center", flexShrink:0, marginTop:2 }}>
                 <button onClick={shareScenario} style={{ background:"none", border:`1px solid ${t.btnBorder}`, borderRadius:20, color: copied ? "#40b870" : t.btnColor, fontSize:12, padding:"5px 14px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", transition:"color 0.2s" }}>
@@ -682,6 +752,19 @@
                   {theme==="dark" ? "☀ Light" : "☾ Dark"}
                 </button>
               </div>
+            </div>
+
+            {/* Mode toggle */}
+            <div style={{ display:"flex", gap:0, borderRadius:10, overflow:"hidden", border:`1px solid ${t.border}`, marginBottom:20, width:"fit-content" }}>
+              {[["ceiling","📊 Ceiling finder"],["deal","🏷 Deal check"]].map(([key,label]) => (
+                <button key={key} onClick={() => setMode(key)}
+                  style={{ padding:"8px 20px", fontSize:13, fontWeight: mode===key ? 700 : 400,
+                    cursor:"pointer", fontFamily:"'DM Sans',sans-serif", border:"none",
+                    background: mode===key ? t.accent : t.surface,
+                    color: mode===key ? "#fff" : t.textMid,
+                    transition:"all 0.15s",
+                  }}>{label}</button>
+              ))}
             </div>
 
             {/* Buyer type */}
@@ -700,6 +783,47 @@
               <Slider label="Mortgage Term (years)" value={mortgageYears} min={10} max={30} step={1} onChange={setMortgageYears} display={v => v+"yr"} t={t} editable rawDisplay={v => String(v)} integer />
             </div>
 
+            {/* ── DEAL CHECK mode ─────────────────────────────────────────── */}
+            {mode==="deal" && (
+              <div style={{ marginBottom:20 }}>
+                {/* Price input */}
+                <div style={{ background:t.surface, borderRadius:12, padding:"22px 24px", border:`1px solid ${t.border}`, marginBottom:16 }}>
+                  <DealPriceInput value={dealPrice} onChange={setDealPrice} t={t} />
+                </div>
+
+                {/* Verdict banner */}
+                <div style={{
+                  borderRadius:12, padding:"18px 24px", marginBottom:16,
+                  background: dealFeasible ? "#e8f8ef" : "#fff0ee",
+                  border: `1.5px solid ${dealFeasible ? "#40b870" : "#e05040"}`,
+                }}>
+                  <div style={{ fontSize:16, fontWeight:700, color: dealFeasible ? "#2a7a4a" : "#b03020", marginBottom: dealWarnings.length ? 8 : 0 }}>
+                    {dealFeasible ? "✓ This deal works within your budget" : "✗ This deal exceeds your budget"}
+                  </div>
+                  {dealWarnings.map(w => (
+                    <div key={w} style={{ fontSize:13, color:"#b03020", marginTop:4 }}>• {w}</div>
+                  ))}
+                </div>
+
+                {/* Deal cards */}
+                <div className="grid-5col" style={{ marginBottom:24 }}>
+                  {[
+                    { label:"Target Price",      value:"₪"+(dealPrice/1000000).toFixed(3)+"M",          sub: buyerType==="investor" ? "8% flat tax" : "first-home brackets", color:t.accent },
+                    { label:"Capital Needed",    value:fmtFull(Math.round(dealCapNeeded)),               sub:`down ₪${Math.round(dealDown).toLocaleString()} + closing ₪${Math.round(dealClosing).toLocaleString()}`, color: dealCapGap>0 ? "#e05040" : "#5090d0" },
+                    { label:"Mortgage",          value:fmtFull(dealLoan),                                sub:`${(dealLoan/dealPrice*100).toFixed(1)}% LTV · max ${(( 1-minDownPct)*100).toFixed(0)}%`, color:"#5090d0" },
+                    { label:"Monthly Payment",   value:fmtFull(Math.round(dealMonthly))+"/mo",           sub:`${mortgageYears}yr @ ${mortgageRate.toFixed(1)}%`, color: dealMoGap>0 ? "#e05040" : "#e07060" },
+                    { label:"Total Interest",    value:fmtFull(dealTotalInterest),                       sub:`total paid ${fmtFull(Math.round(dealTotalPaid))}`, color:"#b06040" },
+                  ].map(({label,value,sub,color}) => (
+                    <div key={label} style={{ background:t.surface, borderRadius:10, padding:"14px 16px", border:`1px solid ${t.border}` }}>
+                      <div style={{ fontSize:10, color:t.textMid, marginBottom:4, textTransform:"uppercase", letterSpacing:"0.05em" }}>{label}</div>
+                      <div style={{ fontSize:18, fontWeight:700, color, fontFamily:"'DM Mono',monospace" }}>{value}</div>
+                      <div style={{ fontSize:10, color:t.textDim, marginTop:3 }}>{sub}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Closing costs toggle */}
             <div style={{ marginBottom:20 }}>
               <button onClick={() => setShowClosing(s=>!s)} style={{ background:"none", border:`1px solid ${t.btnBorder}`, borderRadius:8, color:t.btnColor, fontSize:12, padding:"6px 14px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", display:"flex", alignItems:"center", gap:6 }}>
@@ -717,14 +841,14 @@
                     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
                       <span style={{ fontSize:12, fontWeight:600, color:t.textMid }}>Mortgage broker</span>
                       <div style={{ display:"flex", gap:0, borderRadius:6, overflow:"hidden", border:`1px solid ${t.border}` }}>
-                        {["flat","pct"].map(mode => (
-                          <button key={mode} onClick={() => setBrokerFeeMode(mode)}
+                        {["flat","pct"].map(bm => (
+                          <button key={bm} onClick={() => setBrokerFeeMode(bm)}
                             style={{ padding:"3px 10px", fontSize:11, cursor:"pointer", fontFamily:"'DM Sans',sans-serif", border:"none",
-                              background: brokerFeeMode===mode ? t.accent : t.surface,
-                              color: brokerFeeMode===mode ? "#fff" : t.textMid,
-                              fontWeight: brokerFeeMode===mode ? 700 : 400,
+                              background: brokerFeeMode===bm ? t.accent : t.surface,
+                              color: brokerFeeMode===bm ? "#fff" : t.textMid,
+                              fontWeight: brokerFeeMode===bm ? 700 : 400,
                             }}>
-                            {mode==="flat" ? "₪ flat" : "% loan"}
+                            {bm==="flat" ? "₪ flat" : "% loan"}
                           </button>
                         ))}
                       </div>
@@ -756,7 +880,8 @@
               )}
             </div>
 
-            {/* Cards */}
+            {/* Ceiling mode output */}
+            {mode==="ceiling" && (<>
             {cards.length>0 && (
               <div className="grid-5col" style={{ marginBottom:24 }}>
                 {cards.map(({label,value,sub,color}) => (
@@ -820,6 +945,7 @@
               <span style={{ color:"#ff5555", fontWeight:600 }}>Red dashed</span> — {(minDownPct*100).toFixed(0)}% legal floor (slopes up with price).{" "}
               <span style={{ color:"#40b870", fontWeight:600 }}>Green zone</span> — accessible: above capital floor, below both ceilings.
             </div>
+            </>)}
 
           </div>
         </div>
