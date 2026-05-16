@@ -53,12 +53,20 @@
         textDim:"#999", accent:"#2d6a4f", sliderAccent:"#2d6a4f",
         border:"#e8e6e0", btnBorder:"#ccc", btnColor:"#555", grid:"#eee",
         trackFill:"#e0e0e0", prosBg:"#f0faf4", consBg:"#fff8f0",
+        prosText:"#2a7a4a", consText:"#b04020", prosLabel:"#2a7a4a", consLabel:"#b04020",
+        warnBg:"#fff8e0", warnBorder:"#e0a020", warnText:"#7a5000",
+        errorBg:"#fff0ee", errorBorder:"#e05040", errorText:"#b03020",
+        successGreen:"#40b870",
       },
       dark: {
-        bg:"#1a1a1a", surface:"#252525", text:"#f0f0f0", textMid:"#aaa",
-        textDim:"#666", accent:"#52b788", sliderAccent:"#52b788",
-        border:"#333", btnBorder:"#444", btnColor:"#aaa", grid:"#333",
-        trackFill:"#444", prosBg:"#1a2e22", consBg:"#2e231a",
+        bg:"#0f0f14", surface:"#18181f", text:"#e8e0d0", textMid:"#888",
+        textDim:"#555", accent:"#52b788", sliderAccent:"#52b788",
+        border:"#2a2a35", btnBorder:"#333", btnColor:"#888", grid:"#222",
+        trackFill:"#333", prosBg:"#0e1e14", consBg:"#1e130e",
+        prosText:"#60b878", consText:"#c07050", prosLabel:"#60b878", consLabel:"#c07050",
+        warnBg:"#1e1800", warnBorder:"#5a4000", warnText:"#c8a040",
+        errorBg:"#1e0c0a", errorBorder:"#5a2018", errorText:"#d06050",
+        successGreen:"#52b788",
       },
     };
 
@@ -383,12 +391,12 @@
           {showInfo && (
             <div style={{ marginTop:14 }}>
               <div style={{ background:t.prosBg, borderRadius:8, padding:"10px 12px", marginBottom:8 }}>
-                <div style={{ fontSize:11, fontWeight:700, color:"#2a7a4a", marginBottom:6 }}>✓ Pros</div>
-                {track.pros.map(p => <div key={p} style={{ fontSize:11, color:"#2a5a3a", marginBottom:3 }}>• {p}</div>)}
+                <div style={{ fontSize:11, fontWeight:700, color:t.prosLabel, marginBottom:6 }}>✓ Pros</div>
+                {track.pros.map(p => <div key={p} style={{ fontSize:11, color:t.prosText, marginBottom:3 }}>• {p}</div>)}
               </div>
               <div style={{ background:t.consBg, borderRadius:8, padding:"10px 12px", marginBottom:8 }}>
-                <div style={{ fontSize:11, fontWeight:700, color:"#b04020", marginBottom:6 }}>✗ Cons</div>
-                {track.cons.map(c => <div key={c} style={{ fontSize:11, color:"#804020", marginBottom:3 }}>• {c}</div>)}
+                <div style={{ fontSize:11, fontWeight:700, color:t.consLabel, marginBottom:6 }}>✗ Cons</div>
+                {track.cons.map(c => <div key={c} style={{ fontSize:11, color:t.consText, marginBottom:3 }}>• {c}</div>)}
               </div>
               <div style={{ fontSize:11, color:t.textDim, fontStyle:"italic" }}>
                 Best for: {track.bestFor}
@@ -492,7 +500,7 @@
               </div>
               <div style={{ display:"flex", gap:8, alignItems:"center", flexShrink:0, marginTop:2 }}>
                 <button onClick={shareScenario} style={{ background:"none", border:`1px solid ${t.btnBorder}`, borderRadius:20,
-                  color: copied ? "#40b870" : t.btnColor, fontSize:12, padding:"5px 14px", cursor:"pointer",
+                  color: copied ? t.successGreen : t.btnColor, fontSize:12, padding:"5px 14px", cursor:"pointer",
                   fontFamily:"'DM Sans',sans-serif", transition:"color 0.2s" }}>
                   {copied ? "✓ Copied!" : "⎘ Share"}
                 </button>
@@ -521,9 +529,9 @@
 
             {/* Allocation warning */}
             {Math.abs(remaining) > 0 && (
-              <div style={{ background: remaining>0 ? "#fff8e0" : "#fff0ee", border:`1px solid ${remaining>0?"#e0a020":"#e05040"}`,
+              <div style={{ background: remaining>0 ? t.warnBg : t.errorBg, border:`1px solid ${remaining>0 ? t.warnBorder : t.errorBorder}`,
                 borderRadius:10, padding:"10px 16px", marginBottom:16, fontSize:13,
-                color: remaining>0 ? "#7a5000" : "#b03020" }}>
+                color: remaining>0 ? t.warnText : t.errorText }}>
                 {remaining>0
                   ? `${remaining}% of loan unallocated — adjust track shares below to reach 100%`
                   : `Tracks sum to ${totalPct}% — reduce one track to fix`}

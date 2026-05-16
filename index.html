@@ -166,7 +166,10 @@
         text:"#1a1a1a", textMid:"#666", textDim:"#999", textFaint:"#ccc",
         accent:"#9a6c00", grid:"#eeece8", axis:"#dddbd6", maskFill:"#f5f4f0",
         sliderAccent:"#9a6c00",
-        okBg:"rgba(40,160,80,0.12)", okBorder:"rgba(40,160,80,0.4)", okMonthly:"#1a6e30", okLoan:"#555",
+        okBg:"#e8f8ef", okBorder:"#40b870", okText:"#2a7a4a",
+        warnBg:"#fff0ee", warnBorder:"#e05040", warnText:"#b03020", warnItem:"#b03020",
+        successGreen:"#40b870", chartGreen:"#40b870",
+        okBgTable:"rgba(40,160,80,0.12)", okBorderTable:"rgba(40,160,80,0.4)", okMonthly:"#1a6e30", okLoan:"#555",
         dimMonthly:"#555", dimLoan:"#888",
         illegalBg:"repeating-linear-gradient(45deg,rgba(200,40,40,0.05),rgba(200,40,40,0.05) 4px,transparent 4px,transparent 8px)",
         illegalDash:"#bbb", tableHeader:"#f8f7f3", tableSticky:"#ffffff",
@@ -178,7 +181,10 @@
         text:"#f0e8d8", textMid:"#888", textDim:"#555", textFaint:"#333",
         accent:"#f0c070", grid:"#1e1e30", axis:"#252535", maskFill:"#0f0f1a",
         sliderAccent:"#f0c070",
-        okBg:"rgba(80,200,120,0.12)", okBorder:"rgba(80,200,120,0.4)", okMonthly:"#f0c070", okLoan:"#aaa",
+        okBg:"#0d2018", okBorder:"#2a6040", okText:"#60c888",
+        warnBg:"#1e0e0c", warnBorder:"#6a2820", warnText:"#e08070", warnItem:"#c06050",
+        successGreen:"#60c888", chartGreen:"rgba(80,200,120,0.6)",
+        okBgTable:"rgba(80,200,120,0.10)", okBorderTable:"rgba(80,200,120,0.3)", okMonthly:"#f0c070", okLoan:"#aaa",
         dimMonthly:"#aaa", dimLoan:"#999",
         illegalBg:"repeating-linear-gradient(45deg,rgba(255,50,50,0.05),rgba(255,50,50,0.05) 4px,transparent 4px,transparent 8px)",
         illegalDash:"#555", tableHeader:"#161626", tableSticky:"#161626",
@@ -500,11 +506,11 @@
                       const isOk = cell.s==="ok";
                       const isIllegal = cell.s==="illegal";
                       const cellBg = isIllegal ? t.illegalBg
-                        : isOk ? t.okBg
+                        : isOk ? t.okBgTable
                         : cell.s==="cap" ? "rgba(80,144,208,0.07)"
                         : "rgba(192,80,64,0.07)";
                       return (
-                        <td key={price} style={{ padding:"5px 8px", textAlign:"center", borderBottom:`1px solid ${t.rowBorder}`, borderLeft:`1px solid ${t.colBorder}`, background:cellBg, outline:isOk?`1px solid ${t.okBorder}`:"none", outlineOffset:"-1px" }}>
+                        <td key={price} style={{ padding:"5px 8px", textAlign:"center", borderBottom:`1px solid ${t.rowBorder}`, borderLeft:`1px solid ${t.colBorder}`, background:cellBg, outline:isOk?`1px solid ${t.okBorderTable}`:"none", outlineOffset:"-1px" }}>
                           {isIllegal ? (
                             <span style={{ color:t.illegalDash }}>—</span>
                           ) : (
@@ -775,7 +781,7 @@
                 </p>
               </div>
               <div style={{ display:"flex", gap:8, alignItems:"center", flexShrink:0, marginTop:2 }}>
-                <button onClick={shareScenario} style={{ background:"none", border:`1px solid ${t.btnBorder}`, borderRadius:20, color: copied ? "#40b870" : t.btnColor, fontSize:12, padding:"5px 14px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", transition:"color 0.2s" }}>
+                <button onClick={shareScenario} style={{ background:"none", border:`1px solid ${t.btnBorder}`, borderRadius:20, color: copied ? t.successGreen : t.btnColor, fontSize:12, padding:"5px 14px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", transition:"color 0.2s" }}>
                   {copied ? "✓ Copied!" : "⎘ Share"}
                 </button>
                 <button onClick={() => setTheme(th => th==="dark"?"light":"dark")} style={{ background:"none", border:`1px solid ${t.btnBorder}`, borderRadius:20, color:t.btnColor, fontSize:12, padding:"5px 14px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
@@ -824,14 +830,14 @@
                 {/* Verdict banner */}
                 <div style={{
                   borderRadius:12, padding:"18px 24px", marginBottom:16,
-                  background: dealFeasible ? "#e8f8ef" : "#fff0ee",
-                  border: `1.5px solid ${dealFeasible ? "#40b870" : "#e05040"}`,
+                  background: dealFeasible ? t.okBg : t.warnBg,
+                  border: `1.5px solid ${dealFeasible ? t.okBorder : t.warnBorder}`,
                 }}>
-                  <div style={{ fontSize:16, fontWeight:700, color: dealFeasible ? "#2a7a4a" : "#b03020", marginBottom: dealWarnings.length ? 8 : 0 }}>
+                  <div style={{ fontSize:16, fontWeight:700, color: dealFeasible ? t.okText : t.warnText, marginBottom: dealWarnings.length ? 8 : 0 }}>
                     {dealFeasible ? "✓ This deal works within your budget" : "✗ This deal exceeds your budget"}
                   </div>
                   {dealWarnings.map(w => (
-                    <div key={w} style={{ fontSize:13, color:"#b03020", marginTop:4 }}>• {w}</div>
+                    <div key={w} style={{ fontSize:13, color:t.warnItem, marginTop:4 }}>• {w}</div>
                   ))}
                 </div>
 
@@ -1019,7 +1025,7 @@
 
                   <Area type="monotone" dataKey="forbiddenTop" stroke="none" fill="#ee3333" fillOpacity={0.07} legendType="none" tooltipType="none" isAnimationActive={false} />
                   <Area type="monotone" dataKey="minDownLoan"  stroke="none" fill={t.maskFill} fillOpacity={1} legendType="none" tooltipType="none" isAnimationActive={false} />
-                  <Area type="monotone" dataKey="accessibleUpper" stroke="none" fill="#40b870" fillOpacity={0.15} legendType="none" tooltipType="none" isAnimationActive={false} />
+                  <Area type="monotone" dataKey="accessibleUpper" stroke="none" fill={t.chartGreen} fillOpacity={0.15} legendType="none" tooltipType="none" isAnimationActive={false} />
                   <Area type="monotone" dataKey="accessibleLower" stroke="none" fill={t.maskFill} fillOpacity={1} legendType="none" tooltipType="none" isAnimationActive={false} />
 
                   {maxAffordable && (
@@ -1044,7 +1050,7 @@
               <span style={{ color:"#5090d0", fontWeight:600 }}>Blue</span> — max loan your capital allows (rises with price).{" "}
               <span style={{ color:"#e07060", fontWeight:600 }}>Red solid</span> — max loan your monthly budget allows (flat).{" "}
               <span style={{ color:"#ff5555", fontWeight:600 }}>Red dashed</span> — {(minDownPct*100).toFixed(0)}% legal floor (slopes up with price).{" "}
-              <span style={{ color:"#40b870", fontWeight:600 }}>Green zone</span> — accessible: above capital floor, below both ceilings.
+              <span style={{ color:t.successGreen, fontWeight:600 }}>Green zone</span> — accessible: above capital floor, below both ceilings.
             </div>
             </>)}
 
