@@ -9,13 +9,6 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body, #root { height: 100%; }
     body { background: #f5f4f0; }
-    input[type=range] {
-      width: 100%;
-      cursor: pointer;
-      accent-color: #9a6c00;
-      min-height: 36px;      /* larger touch target */
-      touch-action: none;    /* slider captures touch, page scroll won't interfere */
-    }
 
     /* Responsive grids */
     .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
@@ -179,24 +172,67 @@
     };
 
     // ─── SLIDER ─────────────────────────────────────────────────────────────
-    function Slider({ label, value, min, max, step, onChange, display, t }) {
+    function SliderTrack({ value, min, max, step, onChange, accent }) {
+      const trackRef = React.useRef(null);
       const dragging = React.useRef(false);
+
+      function valueFromClientX(clientX) {
+        const rect = trackRef.current.getBoundingClientRect();
+        const pct  = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        const raw  = min + pct * (max - min);
+        // snap to step
+        const stepped = Math.round(raw / step) * step;
+        return Math.max(min, Math.min(max, stepped));
+      }
+
+      function onDown(e) {
+        e.preventDefault();           // stop page scroll on this touch
+        dragging.current = true;
+        trackRef.current.setPointerCapture(e.pointerId);
+        onChange(valueFromClientX(e.clientX));
+      }
+      function onMove(e) {
+        if (!dragging.current) return;
+        onChange(valueFromClientX(e.clientX));
+      }
+      function onUp() { dragging.current = false; }
+
+      const pct = ((value - min) / (max - min)) * 100;
+
+      return (
+        <div ref={trackRef}
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={onUp}
+          onPointerCancel={onUp}
+          style={{
+            position:"relative", height:36, display:"flex",
+            alignItems:"center", cursor:"pointer", userSelect:"none",
+            touchAction:"none",   /* critical: tells browser WE handle touch */
+          }}>
+          {/* Track background */}
+          <div style={{ position:"absolute", left:0, right:0, height:4, borderRadius:2, background:"#ddd" }} />
+          {/* Filled portion */}
+          <div style={{ position:"absolute", left:0, width:`${pct}%`, height:4, borderRadius:2, background:accent }} />
+          {/* Thumb */}
+          <div style={{
+            position:"absolute", left:`${pct}%`, transform:"translateX(-50%)",
+            width:20, height:20, borderRadius:"50%", background:accent,
+            boxShadow:"0 1px 5px rgba(0,0,0,0.3)", border:"2px solid #fff",
+            pointerEvents:"none",
+          }} />
+        </div>
+      );
+    }
+
+    function Slider({ label, value, min, max, step, onChange, display, t }) {
       return (
         <div style={{ marginBottom: 18 }}>
           <div style={{ display:"flex", justifyContent:"space-between", marginBottom: 5 }}>
             <span style={{ fontSize:12, fontWeight:600, color:t.textMid }}>{label}</span>
             <span style={{ fontSize:13, fontWeight:700, color:t.accent, fontFamily:"'DM Mono',monospace" }}>{display(value)}</span>
           </div>
-          <input type="range" min={min} max={max} step={step} value={value}
-            onPointerDown={e => {
-              dragging.current = true;
-              e.currentTarget.setPointerCapture(e.pointerId);
-            }}
-            onPointerUp={() => { dragging.current = false; }}
-            onPointerCancel={() => { dragging.current = false; }}
-            onChange={e => { if (dragging.current) onChange(Number(e.target.value)); }}
-            style={{ width:"100%", accentColor:t.sliderAccent, cursor:"pointer" }}
-          />
+          <SliderTrack value={value} min={min} max={max} step={step} onChange={onChange} accent={t.sliderAccent} />
           <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:t.textDim, marginTop:2 }}>
             <span>{display(min)}</span><span>{display(max)}</span>
           </div>
@@ -589,10 +625,7 @@
                     </div>
                     {brokerFeeMode==="flat" ? (
                       <>
-                        <input type="range" min={0} max={40000} step={1000} value={brokerFee}
-                          onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); }}
-                          onChange={e => setBrokerFee(Number(e.target.value))}
-                          style={{ width:"100%", accentColor:t.sliderAccent, cursor:"pointer" }} />
+                        <SliderTrack value={brokerFee} min={0} max={40000} step={1000} onChange={setBrokerFee} accent={t.sliderAccent} />
                         <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:t.textDim, marginTop:2 }}>
                           <span>₪0</span>
                           <span style={{ fontSize:12, fontWeight:700, color:t.accent, fontFamily:"'DM Mono',monospace" }}>{"₪"+brokerFee.toLocaleString()+" +VAT"}</span>
@@ -601,10 +634,7 @@
                       </>
                     ) : (
                       <>
-                        <input type="range" min={0} max={2} step={0.1} value={brokerFeePct}
-                          onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); }}
-                          onChange={e => setBrokerFeePct(Number(e.target.value))}
-                          style={{ width:"100%", accentColor:t.sliderAccent, cursor:"pointer" }} />
+                        <SliderTrack value={brokerFeePct} min={0} max={2} step={0.1} onChange={setBrokerFeePct} accent={t.sliderAccent} />
                         <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:t.textDim, marginTop:2 }}>
                           <span>0%</span>
                           <span style={{ fontSize:12, fontWeight:700, color:t.accent, fontFamily:"'DM Mono',monospace" }}>{brokerFeePct.toFixed(1)+"% of mortgage +VAT"}</span>
