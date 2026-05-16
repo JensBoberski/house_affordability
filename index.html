@@ -15,11 +15,13 @@
     .grid-3col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
     .grid-4col { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }
     .grid-closing { display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px; }
+    .grid-5col { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
 
     @media (max-width: 640px) {
       .grid-2col      { grid-template-columns: 1fr; gap: 0; }
       .grid-3col      { grid-template-columns: 1fr; gap: 8px; }
       .grid-4col      { grid-template-columns: 1fr 1fr; gap: 8px; }
+      .grid-5col      { grid-template-columns: 1fr 1fr; gap: 8px; }
       .grid-closing   { grid-template-columns: 1fr; gap: 0; }
       .hide-mobile    { display: none !important; }
       .table-mortgage-col { min-width: 44px !important; padding: 7px 5px !important; }
@@ -45,7 +47,21 @@
       try { return JSON.parse(localStorage.getItem(STORE_KEY) || "{}"); }
       catch { return {}; }
     }
-    function s(key, def) { const v = loadSaved()[key]; return v !== undefined ? v : def; }
+    function loadFromHash() {
+      try {
+        const h = window.location.hash.slice(1);
+        if (!h) return {};
+        return JSON.parse(atob(h));
+      } catch { return {}; }
+    }
+    const _hashState = loadFromHash();
+    const _saved     = Object.keys(_hashState).length ? _hashState : loadSaved();
+    function s(key, def) { const v = _saved[key]; return v !== undefined ? v : def; }
+
+    function buildShareUrl(state) {
+      const encoded = btoa(JSON.stringify(state));
+      return window.location.origin + window.location.pathname + "#" + encoded;
+    }
     const {
       ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid,
       Tooltip, ReferenceLine, ResponsiveContainer, Legend
@@ -529,6 +545,18 @@
       const [mortgageYears, setMortgageYears] = useState(() => s("mortgageYears", 30));
       const [showClosing, setShowClosing]   = useState(() => s("showClosing", true));
       const [buyerType, setBuyerType]       = useState(() => s("buyerType", "first"));
+      const [copied, setCopied]             = useState(false);
+
+      function shareScenario() {
+        const state = { theme, maxCapital, maxMonthly, lawyerPct, agentPct,
+          brokerFee, brokerFeePct, brokerFeeMode, appraiser, otherCosts, renovations,
+          mortgageRate, mortgageYears, showClosing, buyerType };
+        const url = buildShareUrl(state);
+        navigator.clipboard.writeText(url).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        });
+      }
 
       // Save all values to localStorage whenever any change
       useEffect(() => {
@@ -620,6 +648,9 @@
       const ceilTax        = maxAffordable ? calcPurchaseTax(maxAffordable, btype.brackets) : null;
       const ceilClosingAll = maxAffordable ? calcClosing(maxAffordable, cp) : null;
 
+      const ceilTotalPaid    = ceilMonthly ? ceilMonthly * 12 * mortgageYears : null;
+      const ceilTotalInterest = ceilTotalPaid && ceilMortgage ? Math.round(ceilTotalPaid - ceilMortgage) : null;
+
       const cards = maxAffordable ? [
         { label:"Max Affordable Price",  value:"₪"+(maxAffordable/1000000).toFixed(3)+"M",
           sub:"exact ceiling",            color:t.accent },
@@ -627,6 +658,8 @@
           sub:ceilDownAmt && maxAffordable ? "down: "+fmtFull(ceilDownAmt)+" ("+(ceilDownAmt/maxAffordable*100).toFixed(1)+"%)" : "", color:"#5090d0" },
         { label:"Monthly Payment",       value:ceilMonthly ? fmtFull(ceilMonthly)+"/mo" : "—",
           sub:mortgageYears+"yr @ "+mortgageRate.toFixed(2)+"%", color:"#e07060" },
+        { label:"Total Interest",        value:ceilTotalInterest ? fmtFull(ceilTotalInterest) : "—",
+          sub:ceilTotalPaid ? "total paid "+fmtFull(Math.round(ceilTotalPaid)) : "", color:"#b06040" },
         { label:"Closing Costs",         value:ceilClosingAll ? fmtFull(ceilClosingAll) : "—",
           sub:"incl. tax "+fmtFull(ceilTax??0)+" (מס רכישה)", color:"#c05040" },
       ] : [];
@@ -641,9 +674,14 @@
                 <h1 style={{ fontSize:21, fontWeight:700, margin:"0 0 5px 0", letterSpacing:"-0.3px", color:t.text }}>Affordability Map</h1>
                 <p style={{ fontSize:12, color:t.textMid, margin:0 }}>Set your constraints — the intersection is your ceiling.</p>
               </div>
-              <button onClick={() => setTheme(th => th==="dark"?"light":"dark")} style={{ background:"none", border:`1px solid ${t.btnBorder}`, borderRadius:20, color:t.btnColor, fontSize:12, padding:"5px 14px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", marginTop:2, flexShrink:0 }}>
-                {theme==="dark" ? "☀ Light" : "☾ Dark"}
-              </button>
+              <div style={{ display:"flex", gap:8, alignItems:"center", flexShrink:0, marginTop:2 }}>
+                <button onClick={shareScenario} style={{ background:"none", border:`1px solid ${t.btnBorder}`, borderRadius:20, color: copied ? "#40b870" : t.btnColor, fontSize:12, padding:"5px 14px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", transition:"color 0.2s" }}>
+                  {copied ? "✓ Copied!" : "⎘ Share"}
+                </button>
+                <button onClick={() => setTheme(th => th==="dark"?"light":"dark")} style={{ background:"none", border:`1px solid ${t.btnBorder}`, borderRadius:20, color:t.btnColor, fontSize:12, padding:"5px 14px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
+                  {theme==="dark" ? "☀ Light" : "☾ Dark"}
+                </button>
+              </div>
             </div>
 
             {/* Buyer type */}
@@ -652,7 +690,12 @@
             {/* Main sliders */}
             <div className="grid-2col" style={{ background:t.surface, borderRadius:12, padding:"22px 24px", border:`1px solid ${t.border}`, marginBottom:16 }}>
               <Slider label="Max Capital Available" value={maxCapital} min={500000}  max={4000000} step={50000} onChange={setMaxCapital} display={fmtM} t={t} editable rawDisplay={v => String(v)} />
-              <Slider label="Max Monthly Payment"   value={maxMonthly} min={5000}    max={30000}   step={500}   onChange={setMaxMonthly} display={v => "₪"+v.toLocaleString()} t={t} editable rawDisplay={v => String(v)} />
+              <div>
+                <Slider label="Max Monthly Payment"   value={maxMonthly} min={5000}    max={30000}   step={500}   onChange={setMaxMonthly} display={v => "₪"+v.toLocaleString()} t={t} editable rawDisplay={v => String(v)} />
+                <div style={{ fontSize:11, color:t.textDim, marginTop:-12, marginBottom:8 }}>
+                  Implies net income ≥ ₪{Math.round(maxMonthly/0.4).toLocaleString()}/mo at 40% PTI
+                </div>
+              </div>
               <Slider label="Mortgage Rate" value={mortgageRate} min={1.0} max={7.0} step={0.1} onChange={setMortgageRate} display={v => (Math.round(v*100)/100 === Math.round(v*10)/10 ? v.toFixed(1) : (Math.round(v*100)/100).toFixed(2))+"%"} t={t} editable rawDisplay={v => String(v)} />
               <Slider label="Mortgage Term (years)" value={mortgageYears} min={10} max={30} step={1} onChange={setMortgageYears} display={v => v+"yr"} t={t} editable rawDisplay={v => String(v)} integer />
             </div>
@@ -715,7 +758,7 @@
 
             {/* Cards */}
             {cards.length>0 && (
-              <div className="grid-4col" style={{ marginBottom:24 }}>
+              <div className="grid-5col" style={{ marginBottom:24 }}>
                 {cards.map(({label,value,sub,color}) => (
                   <div key={label} style={{ background:t.surface, borderRadius:10, padding:"14px 16px", border:`1px solid ${t.border}` }}>
                     <div style={{ fontSize:10, color:t.textMid, marginBottom:4, textTransform:"uppercase", letterSpacing:"0.05em" }}>{label}</div>
