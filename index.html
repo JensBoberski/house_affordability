@@ -172,7 +172,7 @@
     };
 
     // ─── SLIDER ─────────────────────────────────────────────────────────────
-    function SliderTrack({ value, min, max, step, onChange, accent }) {
+    function SliderTrack({ value, min, max, step, onChange, accent, onInteract }) {
       const trackRef = React.useRef(null);
       const dragging = React.useRef(false);
 
@@ -187,6 +187,7 @@
 
       function onDown(e) {
         e.preventDefault();           // stop page scroll on this touch
+        if (onInteract) onInteract();
         dragging.current = true;
         trackRef.current.setPointerCapture(e.pointerId);
         onChange(valueFromClientX(e.clientX));
@@ -269,18 +270,13 @@
                 }}
               />
             ) : (
-              <span
-                onClick={startEdit}
-                style={{
-                  fontSize:13, fontWeight:700, color:t.accent, fontFamily:"'DM Mono',monospace",
-                  cursor: editable ? "text" : "default",
-                  borderBottom: editable ? `1px dashed ${t.accent}` : "none",
-                  paddingBottom: editable ? 1 : 0,
-                }}
-              >{display(value)}</span>
+              <span onClick={startEdit} style={{ display:"flex", alignItems:"center", gap:4, cursor: editable ? "pointer" : "default" }}>
+                <span style={{ fontSize:13, fontWeight:700, color:t.accent, fontFamily:"'DM Mono',monospace" }}>{display(value)}</span>
+                {editable && <span style={{ fontSize:11, color:t.textDim, lineHeight:1 }}>✎</span>}
+              </span>
             )}
           </div>
-          <SliderTrack value={value} min={min} max={max} step={step} onChange={onChange} accent={t.sliderAccent} />
+          <SliderTrack value={value} min={min} max={max} step={step} onChange={onChange} accent={t.sliderAccent} onInteract={editing ? commitEdit : undefined} />
           <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:t.textDim, marginTop:2 }}>
             <span>{display(min)}</span><span>{display(max)}</span>
           </div>
