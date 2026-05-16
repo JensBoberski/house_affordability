@@ -331,7 +331,7 @@
       const principal = loanAmount * pct / 100;
       const effectiveRate = isPrime ? (rate + primeSpread) / 100 : rate / 100;
       const payment = monthlyPayment(principal, effectiveRate, years);
-      const maxPct = isPrime ? 33 : Math.max(0, 100 - otherTotal + pct);
+      const maxPct = Math.max(0, 100 - otherTotal + pct);
 
       return (
         <div style={{ background:t.surface, borderRadius:12, border:`2px solid ${pct>0 ? track.color : t.border}`,
