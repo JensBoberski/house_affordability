@@ -239,9 +239,7 @@
       function commitEdit() {
         const num = parseFloat(String(draft).replace(/[^\d.]/g, ""));
         if (!isNaN(num)) {
-          const clamped = Math.max(min, Math.min(max, num));
-          const snapped = Math.round(clamped / step) * step;
-          onChange(parseFloat(snapped.toFixed(10)));
+          onChange(Math.max(min, Math.min(max, num)));
         }
         setEditing(false);
       }
@@ -634,7 +632,7 @@
             <div className="grid-2col" style={{ background:t.surface, borderRadius:12, padding:"22px 24px", border:`1px solid ${t.border}`, marginBottom:16 }}>
               <Slider label="Max Capital Available" value={maxCapital} min={500000}  max={4000000} step={50000} onChange={setMaxCapital} display={fmtM} t={t} editable rawDisplay={v => String(v)} />
               <Slider label="Max Monthly Payment"   value={maxMonthly} min={5000}    max={30000}   step={500}   onChange={setMaxMonthly} display={v => "₪"+v.toLocaleString()} t={t} editable rawDisplay={v => String(v)} />
-              <Slider label="Mortgage Rate" value={mortgageRate} min={1.0} max={7.0} step={0.1} onChange={setMortgageRate} display={v => v.toFixed(1)+"%"} t={t} editable rawDisplay={v => String(v)} />
+              <Slider label="Mortgage Rate" value={mortgageRate} min={1.0} max={7.0} step={0.1} onChange={setMortgageRate} display={v => (Math.round(v*100)/100 === Math.round(v*10)/10 ? v.toFixed(1) : (Math.round(v*100)/100).toFixed(2))+"%"} t={t} editable rawDisplay={v => String(v)} />
               <Slider label="Mortgage Term (years)" value={mortgageYears} min={10} max={30} step={1} onChange={setMortgageYears} display={v => v+"yr"} t={t} editable rawDisplay={v => String(v)} />
             </div>
 
