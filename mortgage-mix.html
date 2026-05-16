@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mortgage Mix Calculator</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; }
+    body { background: #f5f4f0; }
+    .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+    .grid-3col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    .grid-4col { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }
+    @media (max-width: 640px) {
+      .grid-2col { grid-template-columns: 1fr; gap: 0; }
+      .grid-3col { grid-template-columns: 1fr; gap: 8px; }
+      .grid-4col { grid-template-columns: 1fr 1fr; gap: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.23.6/babel.min.js"></script>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect } = React;
+
+    // ─── PERSISTENCE ─────────────────────────────────────────────────────────
+    const STORE_KEY = "mortgage_mix_v1";
+    function loadSaved() {
+      try { return JSON.parse(localStorage.getItem(STORE_KEY) || "{}"); }
+      catch { return {}; }
+    }
+    function loadFromHash() {
+      try { const h = window.location.hash.slice(1); if (!h) return {}; return JSON.parse(atob(h)); }
+      catch { return {}; }
+    }
+    const _hash = loadFromHash();
+    const _saved = Object.keys(_hash).length ? _hash : loadSaved();
+    function s(key, def) { const v = _saved[key]; return v !== undefined ? v : def; }
+
+    function buildShareUrl(state) {
+      return window.location.origin + window.location.pathname + "#" + btoa(JSON.stringify(state));
+    }
+
+    // ─── THEMES ──────────────────────────────────────────────────────────────
+    const THEMES = {
+      light: {
+        bg:"#f5f4f0", surface:"#ffffff", text:"#1a1a1a", textMid:"#555",
+        textDim:"#999", accent:"#2d6a4f", sliderAccent:"#2d6a4f",
+        border:"#e8e6e0", btnBorder:"#ccc", btnColor:"#555", grid:"#eee",
+        trackFill:"#e0e0e0", prosBg:"#f0faf4", consBg:"#fff8f0",
+      },
+      dark: {
+        bg:"#1a1a1a", surface:"#252525", text:"#f0f0f0", textMid:"#aaa",
+        textDim:"#666", accent:"#52b788", sliderAccent:"#52b788",
+        border:"#333", btnBorder:"#444", btnColor:"#aaa", grid:"#333",
+        trackFill:"#444", prosBg:"#1a2e22", consBg:"#2e231a",
+      },
+    };
+
+    // ─── TRACK DEFINITIONS ───────────────────────────────────────────────────
+    const TRACKS = [
+      {
+        key: "prime",
+        name: "Prime (פריים)",
+        nameHeb: "ריבית פריים",
+        color: "#5090d0",
+        cap: 1/3,
+        pros: [
+          "Benefits immediately when Bank of Israel cuts rates",
+          "Historically the cheapest track over long periods",
+          "No inflation linkage — principal stays fixed",
+        ],
+        cons: [
+          "Unpredictable — payment changes every BoI decision (every 6 weeks)",
+          "Currently high — BoI rate is elevated post-2022",
+          "Bank of Israel caps this at 1/3 of total mortgage",
+        ],
+        bestFor: "Buyers who can absorb payment volatility and expect rates to fall",
+      },
+      {
+        key: "klatz",
+        name: "Fixed unlinked (קל\"צ)",
+        nameHeb: "קבועה לא צמודה",
+        color: "#e07060",
+        cap: 1,
+        pros: [
+          "Total certainty — payment never changes for the full term",
+          "No inflation risk — principal is always fixed in NIS",
+          "Easy to budget around",
+        ],
+        cons: [
+          "Highest initial rate — bank prices in inflation and rate risk",
+          "No benefit if rates fall (unless you refinance)",
+          "Refinancing has costs and is not always worth it",
+        ],
+        bestFor: "Conservative buyers who prioritise predictability over cost",
+      },
+      {
+        key: "katzam",
+        name: "Fixed CPI-linked (קצ\"מ)",
+        nameHeb: "קבועה צמודה מדד",
+        color: "#c070c0",
+        cap: 1,
+        pros: [
+          "Lower nominal rate than fixed unlinked",
+          "Good value when inflation is low (2–3%)",
+          "Fixed rate so no exposure to BoI decisions",
+        ],
+        cons: [
+          "Principal grows with CPI — you owe more in NIS over time",
+          "Painful in high-inflation periods (2022–23 was brutal)",
+          "True cost is unpredictable — depends on future inflation",
+        ],
+        bestFor: "Buyers who believe inflation will stay moderate and want a lower rate",
+      },
+      {
+        key: "malatz",
+        name: "Variable unlinked (מל\"צ)",
+        nameHeb: "משתנה לא צמודה",
+        color: "#e0a030",
+        cap: 1,
+        pros: [
+          "Lower initial rate than fixed unlinked",
+          "No inflation linkage — principal stays fixed",
+          "Resets every 5 years — benefits from future rate drops",
+        ],
+        cons: [
+          "Rate resets every 5 years — uncertain from that point",
+          "If rates rise, payment jumps at reset",
+          "Less predictable than fixed unlinked",
+        ],
+        bestFor: "Buyers planning to sell or refinance within 5 years",
+      },
+    ];
+
+    // ─── MATH ────────────────────────────────────────────────────────────────
+    function monthlyPayment(principal, annualRate, years) {
+      if (principal <= 0) return 0;
+      if (annualRate <= 0) return principal / (years * 12);
+      const r = annualRate / 12;
+      const n = years * 12;
+      return principal * r * Math.pow(1+r, n) / (Math.pow(1+r, n) - 1);
+    }
+
+    // For CPI-linked: payment in year 1 uses the real rate
+    // In year Y, the outstanding principal has grown by CPI^Y, so payment grows too
+    function katzamPaymentYear(principal, realRate, cpi, years, atYear) {
+      const grownPrincipal = principal * Math.pow(1 + cpi, atYear);
+      return monthlyPayment(grownPrincipal, realRate, years - atYear);
+    }
+
+    // Blended effective rate: find r such that monthly(totalLoan, r, years) = totalPayment
+    function blendedRate(totalPayment, totalLoan, years) {
+      if (totalLoan <= 0) return 0;
+      let lo = 0.0001, hi = 0.20;
+      for (let i = 0; i < 60; i++) {
+        const mid = (lo + hi) / 2;
+        if (monthlyPayment(totalLoan, mid, years) < totalPayment) lo = mid; else hi = mid;
+      }
+      return (lo + hi) / 2;
+    }
+
+    // ─── SLIDER TRACK ────────────────────────────────────────────────────────
+    function SliderTrack({ value, min, max, step, onChange, accent, onInteract }) {
+      const trackRef = React.useRef(null);
+      const dragging = React.useRef(false);
+
+      function valueFromClientX(clientX) {
+        const rect = trackRef.current.getBoundingClientRect();
+        const pct  = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        const raw  = min + pct * (max - min);
+        const stepped = Math.round(raw / step) * step;
+        const decimals = (String(step).split(".")[1] || "").length;
+        return parseFloat(Math.max(min, Math.min(max, stepped)).toFixed(decimals));
+      }
+      function onDown(e) {
+        e.preventDefault();
+        if (onInteract) onInteract();
+        dragging.current = true;
+        trackRef.current.setPointerCapture(e.pointerId);
+        onChange(valueFromClientX(e.clientX));
+      }
+      function onMove(e) { if (!dragging.current) return; onChange(valueFromClientX(e.clientX)); }
+      function onUp()   { dragging.current = false; }
+
+      const pct = ((value - min) / (max - min)) * 100;
+      return (
+        <div ref={trackRef} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+          style={{ position:"relative", height:36, display:"flex", alignItems:"center", userSelect:"none" }}>
+          <div style={{ position:"absolute", left:0, right:0, height:4, borderRadius:2, background:"#ddd" }} />
+          <div style={{ position:"absolute", left:0, width:`${pct}%`, height:4, borderRadius:2, background:accent }} />
+          <div onPointerDown={onDown}
+            style={{ position:"absolute", left:`${pct}%`, transform:"translateX(-50%)",
+              width:28, height:28, borderRadius:"50%", background:accent,
+              boxShadow:"0 1px 5px rgba(0,0,0,0.3)", border:"2px solid #fff",
+              cursor:"grab", touchAction:"none" }} />
+        </div>
+      );
+    }
+
+    // ─── SLIDER ──────────────────────────────────────────────────────────────
+    function Slider({ label, value, min, max, step, onChange, display, t, editable, integer }) {
+      const [editing, setEditing] = useState(false);
+      const [draft, setDraft]     = useState("");
+      const [invalid, setInvalid] = useState(false);
+      const committed             = React.useRef(false);
+
+      function startEdit() {
+        if (!editable) return;
+        committed.current = false;
+        setInvalid(false);
+        setDraft(String(value));
+        setEditing(true);
+      }
+      function commitEdit() {
+        if (committed.current) { setEditing(false); return; }
+        committed.current = true;
+        const num = parseFloat(String(draft).replace(/[^\d.]/g, ""));
+        if (!isNaN(num)) {
+          const clamped = Math.max(min, Math.min(max, num));
+          onChange(integer ? Math.round(clamped) : clamped);
+          setInvalid(false);
+        } else {
+          setInvalid(true);
+          setTimeout(() => setInvalid(false), 800);
+        }
+        setEditing(false);
+      }
+      function onKeyDown(e) {
+        if (e.key === "Enter") commitEdit();
+        if (e.key === "Escape") { committed.current = true; setEditing(false); }
+      }
+
+      return (
+        <div style={{ marginBottom:16 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+            <span style={{ fontSize:12, fontWeight:600, color:t.textMid }}>{label}</span>
+            {editing ? (
+              <input autoFocus type="text" inputMode={integer ? "numeric" : "decimal"} value={draft}
+                onChange={e => setDraft(e.target.value)} onBlur={commitEdit} onKeyDown={onKeyDown}
+                style={{ fontSize:13, fontWeight:700, color:t.accent, fontFamily:"'DM Mono',monospace",
+                  border:"none", borderBottom:`2px solid ${t.accent}`, outline:"none",
+                  background:"transparent", width:100, textAlign:"right" }} />
+            ) : (
+              <span onClick={startEdit} style={{ fontSize:13, fontWeight:700,
+                color: invalid ? "#e53e3e" : t.accent, fontFamily:"'DM Mono',monospace",
+                cursor: editable ? "pointer" : "default",
+                textDecoration: editable ? "underline" : "none", textUnderlineOffset:3 }}>
+                {invalid ? "invalid" : display(value)}
+              </span>
+            )}
+          </div>
+          <SliderTrack value={value} min={min} max={max} step={step} onChange={onChange}
+            accent={t.sliderAccent} onInteract={editing ? commitEdit : undefined} />
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:t.textDim, marginTop:2 }}>
+            <span>{display(min)}</span><span>{display(max)}</span>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── LOAN INPUT ──────────────────────────────────────────────────────────
+    function LoanInput({ value, onChange, t }) {
+      const [editing, setEditing] = useState(false);
+      const [draft, setDraft]     = useState("");
+      const committed             = React.useRef(false);
+
+      function startEdit() { committed.current = false; setDraft(String(value)); setEditing(true); }
+      function commit() {
+        if (committed.current) { setEditing(false); return; }
+        committed.current = true;
+        const n = parseFloat(String(draft).replace(/[^\d.]/g,""));
+        if (!isNaN(n) && n > 0) onChange(Math.round(n));
+        setEditing(false);
+      }
+      function onKey(e) {
+        if (e.key==="Enter") commit();
+        if (e.key==="Escape") { committed.current=true; setEditing(false); }
+      }
+      return (
+        <div style={{ background:t.surface, borderRadius:12, padding:"22px 24px", border:`1px solid ${t.border}`, marginBottom:16 }}>
+          <div style={{ fontSize:12, fontWeight:600, color:t.textMid, marginBottom:8 }}>Mortgage loan amount</div>
+          <div style={{ display:"flex", alignItems:"baseline", gap:10 }}>
+            {editing ? (
+              <input autoFocus type="text" inputMode="numeric" value={draft}
+                onChange={e=>setDraft(e.target.value)} onBlur={commit} onKeyDown={onKey}
+                style={{ fontSize:32, fontWeight:700, color:t.accent, fontFamily:"'DM Mono',monospace",
+                  border:"none", borderBottom:`2px solid ${t.accent}`, outline:"none",
+                  background:"transparent", width:"100%", maxWidth:340 }} />
+            ) : (
+              <span onClick={startEdit} style={{ fontSize:32, fontWeight:700, color:t.accent,
+                fontFamily:"'DM Mono',monospace", cursor:"pointer",
+                textDecoration:"underline", textUnderlineOffset:4 }}>
+                ₪{value.toLocaleString()}
+              </span>
+            )}
+            {!editing && <span style={{ fontSize:13, color:t.textDim }}>tap to change</span>}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── TRACK CARD ──────────────────────────────────────────────────────────
+    function TrackCard({ track, pct, rate, loanAmount, cpi, years, t, onPctChange, onRateChange, isPrime, primeSpread, onSpreadChange, otherTotal }) {
+      const [showInfo, setShowInfo] = useState(false);
+      const principal = loanAmount * pct / 100;
+      const effectiveRate = isPrime ? (rate + primeSpread) / 100 : rate / 100;
+      const payment = monthlyPayment(principal, effectiveRate, years);
+      const maxPct = isPrime ? 33 : Math.max(0, 100 - otherTotal + pct);
+
+      return (
+        <div style={{ background:t.surface, borderRadius:12, border:`2px solid ${pct>0 ? track.color : t.border}`,
+          padding:"18px 20px", transition:"border-color 0.2s", opacity: pct===0 ? 0.6 : 1 }}>
+
+          {/* Header */}
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
+            <div>
+              <div style={{ fontSize:14, fontWeight:700, color: pct>0 ? track.color : t.textMid }}>{track.name}</div>
+              <div style={{ fontSize:11, color:t.textDim, marginTop:1 }}>{track.nameHeb}</div>
+            </div>
+            <button onClick={() => setShowInfo(v=>!v)}
+              style={{ fontSize:11, color:t.textDim, background:"none", border:`1px solid ${t.border}`,
+                borderRadius:20, padding:"2px 10px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
+              {showInfo ? "▲ less" : "ℹ more"}
+            </button>
+          </div>
+
+          {/* Share slider */}
+          <div style={{ marginBottom:4 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, fontWeight:600, color:t.textMid, marginBottom:4 }}>
+              <span>Share of loan</span>
+              <span style={{ color: track.color, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{pct}%</span>
+            </div>
+            <SliderTrack value={pct} min={0} max={maxPct} step={1} onChange={v => onPctChange(track.key, v)} accent={track.color} />
+            {isPrime && <div style={{ fontSize:10, color:t.textDim, marginTop:2 }}>Bank of Israel cap: max 33%</div>}
+          </div>
+
+          {/* Rate slider(s) */}
+          {isPrime ? (
+            <>
+              <Slider label="BoI base rate" value={rate} min={0} max={8} step={0.25}
+                onChange={onRateChange} display={v=>v.toFixed(2)+"%"} t={t} editable />
+              <Slider label="Your spread" value={primeSpread} min={-1} max={2} step={0.05}
+                onChange={onSpreadChange} display={v=>(v>=0?"+":"")+v.toFixed(2)+"%"} t={t} editable />
+              <div style={{ fontSize:11, color:t.textDim, marginTop:-8, marginBottom:8 }}>
+                Effective prime rate: <strong style={{ color:track.color }}>{(rate+primeSpread).toFixed(2)}%</strong>
+              </div>
+            </>
+          ) : track.key === "katzam" ? (
+            <>
+              <Slider label="Real rate" value={rate} min={0} max={6} step={0.1}
+                onChange={onRateChange} display={v=>v.toFixed(1)+"%"} t={t} editable />
+              <div style={{ fontSize:11, color:t.textDim, marginTop:-8, marginBottom:8 }}>
+                + CPI linkage (set below) — principal grows with inflation
+              </div>
+            </>
+          ) : (
+            <Slider label="Interest rate" value={rate} min={0} max={9} step={0.1}
+              onChange={onRateChange} display={v=>v.toFixed(1)+"%"} t={t} editable />
+          )}
+
+          {/* Payment summary */}
+          {pct > 0 && (
+            <div style={{ background: `${track.color}15`, borderRadius:8, padding:"10px 12px", marginTop:4 }}>
+              <div style={{ fontSize:11, color:t.textMid, marginBottom:2 }}>
+                ₪{Math.round(principal).toLocaleString()} loan ({pct}%)
+              </div>
+              <div style={{ fontSize:18, fontWeight:700, color:track.color, fontFamily:"'DM Mono',monospace" }}>
+                ₪{Math.round(payment).toLocaleString()}<span style={{ fontSize:12, fontWeight:400 }}>/mo</span>
+              </div>
+              {track.key==="katzam" && (
+                <div style={{ fontSize:10, color:t.textDim, marginTop:2 }}>year 1 · grows with CPI each year</div>
+              )}
+            </div>
+          )}
+
+          {/* Info panel */}
+          {showInfo && (
+            <div style={{ marginTop:14 }}>
+              <div style={{ background:t.prosBg, borderRadius:8, padding:"10px 12px", marginBottom:8 }}>
+                <div style={{ fontSize:11, fontWeight:700, color:"#2a7a4a", marginBottom:6 }}>✓ Pros</div>
+                {track.pros.map(p => <div key={p} style={{ fontSize:11, color:"#2a5a3a", marginBottom:3 }}>• {p}</div>)}
+              </div>
+              <div style={{ background:t.consBg, borderRadius:8, padding:"10px 12px", marginBottom:8 }}>
+                <div style={{ fontSize:11, fontWeight:700, color:"#b04020", marginBottom:6 }}>✗ Cons</div>
+                {track.cons.map(c => <div key={c} style={{ fontSize:11, color:"#804020", marginBottom:3 }}>• {c}</div>)}
+              </div>
+              <div style={{ fontSize:11, color:t.textDim, fontStyle:"italic" }}>
+                Best for: {track.bestFor}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ─── MAIN ────────────────────────────────────────────────────────────────
+    function MortgageMix() {
+      const [theme, setTheme]   = useState(() => s("theme", "light"));
+      const t = THEMES[theme];
+
+      const [loanAmount, setLoanAmount] = useState(() => s("loanAmount", 2000000));
+      const [years, setYears]           = useState(() => s("years", 25));
+      const [cpi, setCpi]               = useState(() => s("cpi", 2.5));
+      const [copied, setCopied]         = useState(false);
+
+      // Track allocations (pct of loan)
+      const [pcts, setPcts] = useState(() => s("pcts", { prime:33, klatz:34, katzam:33, malatz:0 }));
+
+      // Track rates
+      const [primeBase, setPrimeBase]     = useState(() => s("primeBase", 4.5));
+      const [primeSpread, setPrimeSpread] = useState(() => s("primeSpread", 0.5));
+      const [klatzRate, setKlatzRate]     = useState(() => s("klatzRate", 5.5));
+      const [katzamRate, setKatzamRate]   = useState(() => s("katzamRate", 3.5));
+      const [malatzRate, setMalatzRate]   = useState(() => s("malatzRate", 5.0));
+
+      const rateMap = { prime: primeBase, klatz: klatzRate, katzam: katzamRate, malatz: malatzRate };
+      const setRateMap = { prime: setPrimeBase, klatz: setKlatzRate, katzam: setKatzamRate, malatz: setMalatzRate };
+
+      // Persist
+      useEffect(() => {
+        try {
+          localStorage.setItem(STORE_KEY, JSON.stringify({
+            theme, loanAmount, years, cpi, pcts,
+            primeBase, primeSpread, klatzRate, katzamRate, malatzRate,
+          }));
+        } catch {}
+      }, [theme, loanAmount, years, cpi, pcts, primeBase, primeSpread, klatzRate, katzamRate, malatzRate]);
+
+      function handlePctChange(key, newVal) {
+        setPcts(prev => {
+          const others = Object.entries(prev).filter(([k]) => k !== key);
+          const otherSum = others.reduce((s,[,v])=>s+v, 0);
+          const maxAllowed = key==="prime" ? 33 : 100;
+          const clamped = Math.min(newVal, maxAllowed, 100 - otherSum);
+          return { ...prev, [key]: Math.max(0, clamped) };
+        });
+      }
+
+      const totalPct = Object.values(pcts).reduce((s,v)=>s+v,0);
+      const remaining = 100 - totalPct;
+
+      // Calculations
+      const payments = TRACKS.map(tr => {
+        const principal = loanAmount * pcts[tr.key] / 100;
+        const effectiveRate = tr.key==="prime" ? (primeBase+primeSpread)/100 : rateMap[tr.key]/100;
+        return monthlyPayment(principal, effectiveRate, years);
+      });
+      const totalMonthly = payments.reduce((s,v)=>s+v, 0);
+      const blend = blendedRate(totalMonthly, loanAmount, years) * 100;
+      const totalPaid = totalMonthly * 12 * years;
+      const totalInterest = totalPaid - loanAmount;
+
+      // CPI-linked sensitivity: payment at year 5
+      const katzamPrincipal = loanAmount * pcts.katzam / 100;
+      const katzamY5 = pcts.katzam > 0
+        ? katzamPaymentYear(katzamPrincipal, katzamRate/100, cpi/100, years, 5)
+        : 0;
+      const nonKatzamY5 = TRACKS.filter(t=>t.key!=="katzam").reduce((s,tr,i) => {
+        const idx = TRACKS.findIndex(t=>t.key===tr.key);
+        return s + payments[idx];
+      }, 0);
+      const totalY5 = nonKatzamY5 + katzamY5;
+
+      function shareScenario() {
+        const state = { theme, loanAmount, years, cpi, pcts, primeBase, primeSpread, klatzRate, katzamRate, malatzRate };
+        navigator.clipboard.writeText(buildShareUrl(state)).then(() => {
+          setCopied(true); setTimeout(()=>setCopied(false), 2000);
+        });
+      }
+
+      const affordUrl = window.location.pathname.replace("mortgage-mix.html","index.html");
+
+      return (
+        <div style={{ fontFamily:"'DM Sans','Helvetica Neue',sans-serif", background:t.bg, color:t.text,
+          padding:"28px 16px", minHeight:"100vh", boxSizing:"border-box", transition:"background 0.2s,color 0.2s" }}>
+          <div style={{ maxWidth:960, margin:"0 auto" }}>
+
+            {/* Header */}
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
+              <div>
+                <div style={{ fontSize:12, color:t.textDim, marginBottom:4 }}>
+                  <a href={affordUrl} style={{ color:t.accent, textDecoration:"none" }}>← Affordability Map</a>
+                </div>
+                <h1 style={{ fontSize:21, fontWeight:700, margin:"0 0 5px 0", letterSpacing:"-0.3px", color:t.text }}>Mortgage Mix</h1>
+                <p style={{ fontSize:12, color:t.textMid, margin:0 }}>Structure your mortgage across tracks — find your blended rate.</p>
+              </div>
+              <div style={{ display:"flex", gap:8, alignItems:"center", flexShrink:0, marginTop:2 }}>
+                <button onClick={shareScenario} style={{ background:"none", border:`1px solid ${t.btnBorder}`, borderRadius:20,
+                  color: copied ? "#40b870" : t.btnColor, fontSize:12, padding:"5px 14px", cursor:"pointer",
+                  fontFamily:"'DM Sans',sans-serif", transition:"color 0.2s" }}>
+                  {copied ? "✓ Copied!" : "⎘ Share"}
+                </button>
+                <button onClick={() => setTheme(th => th==="dark"?"light":"dark")} style={{ background:"none",
+                  border:`1px solid ${t.btnBorder}`, borderRadius:20, color:t.btnColor, fontSize:12,
+                  padding:"5px 14px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
+                  {theme==="dark" ? "☀ Light" : "☾ Dark"}
+                </button>
+              </div>
+            </div>
+
+            {/* Loan + term */}
+            <LoanInput value={loanAmount} onChange={setLoanAmount} t={t} />
+            <div className="grid-2col" style={{ background:t.surface, borderRadius:12, padding:"22px 24px",
+              border:`1px solid ${t.border}`, marginBottom:16 }}>
+              <Slider label="Mortgage term" value={years} min={5} max={30} step={1}
+                onChange={setYears} display={v=>v+"yr"} t={t} editable integer />
+              <div>
+                <Slider label="Inflation assumption (for קצ\"מ)" value={cpi} min={0} max={6} step={0.1}
+                  onChange={setCpi} display={v=>v.toFixed(1)+"%/yr"} t={t} editable />
+                <div style={{ fontSize:11, color:t.textDim, marginTop:-10, marginBottom:8 }}>
+                  Only affects CPI-linked track projections
+                </div>
+              </div>
+            </div>
+
+            {/* Allocation warning */}
+            {Math.abs(remaining) > 0 && (
+              <div style={{ background: remaining>0 ? "#fff8e0" : "#fff0ee", border:`1px solid ${remaining>0?"#e0a020":"#e05040"}`,
+                borderRadius:10, padding:"10px 16px", marginBottom:16, fontSize:13,
+                color: remaining>0 ? "#7a5000" : "#b03020" }}>
+                {remaining>0
+                  ? `${remaining}% of loan unallocated — adjust track shares below to reach 100%`
+                  : `Tracks sum to ${totalPct}% — reduce one track to fix`}
+              </div>
+            )}
+
+            {/* Track cards */}
+            <div className="grid-2col" style={{ marginBottom:20 }}>
+              {TRACKS.map((track, i) => (
+                <TrackCard key={track.key} track={track}
+                  pct={pcts[track.key]}
+                  rate={rateMap[track.key]}
+                  loanAmount={loanAmount}
+                  cpi={cpi}
+                  years={years}
+                  t={t}
+                  isPrime={track.key==="prime"}
+                  primeSpread={primeSpread}
+                  onSpreadChange={setPrimeSpread}
+                  onPctChange={handlePctChange}
+                  onRateChange={setRateMap[track.key]}
+                  otherTotal={totalPct - pcts[track.key]}
+                />
+              ))}
+            </div>
+
+            {/* Results */}
+            {totalPct===100 && (
+              <>
+                {/* Allocation bar */}
+                <div style={{ marginBottom:16 }}>
+                  <div style={{ fontSize:12, fontWeight:600, color:t.textMid, marginBottom:6 }}>Loan allocation</div>
+                  <div style={{ display:"flex", height:12, borderRadius:6, overflow:"hidden" }}>
+                    {TRACKS.filter(tr=>pcts[tr.key]>0).map(tr => (
+                      <div key={tr.key} style={{ width:`${pcts[tr.key]}%`, background:tr.color,
+                        display:"flex", alignItems:"center", justifyContent:"center" }} />
+                    ))}
+                  </div>
+                  <div style={{ display:"flex", gap:16, marginTop:6, flexWrap:"wrap" }}>
+                    {TRACKS.filter(tr=>pcts[tr.key]>0).map(tr => (
+                      <span key={tr.key} style={{ fontSize:11, color:tr.color, fontWeight:600 }}>
+                        ■ {tr.name.split(" (")[0]} {pcts[tr.key]}%
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Summary cards */}
+                <div className="grid-4col" style={{ marginBottom:16 }}>
+                  {[
+                    { label:"Monthly payment (now)", value:"₪"+Math.round(totalMonthly).toLocaleString()+"/mo", sub:"year 1", color:t.accent },
+                    { label:"Monthly payment (yr 5)", value:"₪"+Math.round(totalY5).toLocaleString()+"/mo",
+                      sub: pcts.katzam>0 ? `+₪${Math.round(totalY5-totalMonthly).toLocaleString()} from CPI linkage` : "same — no CPI-linked portion",
+                      color: totalY5>totalMonthly ? "#e07060" : t.accent },
+                    { label:"Blended effective rate", value:blend.toFixed(2)+"%", sub:"plug into Affordability Map", color:"#5090d0" },
+                    { label:"Total interest", value:"₪"+(totalInterest/1000000).toFixed(2)+"M", sub:`total paid ₪${(totalPaid/1000000).toFixed(2)}M`, color:"#b06040" },
+                  ].map(({label,value,sub,color}) => (
+                    <div key={label} style={{ background:t.surface, borderRadius:10, padding:"14px 16px", border:`1px solid ${t.border}` }}>
+                      <div style={{ fontSize:10, color:t.textMid, marginBottom:4, textTransform:"uppercase", letterSpacing:"0.05em" }}>{label}</div>
+                      <div style={{ fontSize:18, fontWeight:700, color, fontFamily:"'DM Mono',monospace" }}>{value}</div>
+                      <div style={{ fontSize:10, color:t.textDim, marginTop:3 }}>{sub}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* CTA back to affordability map */}
+                <div style={{ background:t.surface, borderRadius:12, padding:"16px 20px", border:`1px solid ${t.border}`,
+                  display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:12 }}>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:600, color:t.text }}>Ready to check affordability?</div>
+                    <div style={{ fontSize:12, color:t.textDim, marginTop:2 }}>
+                      Use <strong style={{ fontFamily:"'DM Mono',monospace", color:t.accent }}>{blend.toFixed(2)}%</strong> as your mortgage rate in the Affordability Map.
+                    </div>
+                  </div>
+                  <a href={affordUrl} style={{ background:t.accent, color:"#fff", borderRadius:20,
+                    padding:"8px 20px", fontSize:13, fontWeight:600, textDecoration:"none",
+                    fontFamily:"'DM Sans',sans-serif", flexShrink:0 }}>
+                    Open Affordability Map →
+                  </a>
+                </div>
+              </>
+            )}
+
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<MortgageMix />);
+  </script>
+</body>
+</html>
