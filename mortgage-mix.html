@@ -92,7 +92,7 @@
       },
       {
         key: "klatz",
-        name: "Fixed unlinked (קל\"צ)",
+        name: 'Fixed unlinked (קל"צ)',
         nameHeb: "קבועה לא צמודה",
         color: "#e07060",
         cap: 1,
@@ -110,7 +110,7 @@
       },
       {
         key: "katzam",
-        name: "Fixed CPI-linked (קצ\"מ)",
+        name: 'Fixed CPI-linked (קצ"מ)',
         nameHeb: "קבועה צמודה מדד",
         color: "#c070c0",
         cap: 1,
@@ -128,7 +128,7 @@
       },
       {
         key: "malatz",
-        name: "Variable unlinked (מל\"צ)",
+        name: 'Variable unlinked (מל"צ)',
         nameHeb: "משתנה לא צמודה",
         color: "#e0a030",
         cap: 1,
@@ -519,7 +519,7 @@
               <Slider label="Mortgage term" value={years} min={5} max={30} step={1}
                 onChange={setYears} display={v=>v+"yr"} t={t} editable integer />
               <div>
-                <Slider label="Inflation assumption (for קצ\"מ)" value={cpi} min={0} max={6} step={0.1}
+                <Slider label={'Inflation assumption (for קצ"מ)'} value={cpi} min={0} max={6} step={0.1}
                   onChange={setCpi} display={v=>v.toFixed(1)+"%/yr"} t={t} editable />
                 <div style={{ fontSize:11, color:t.textDim, marginTop:-10, marginBottom:8 }}>
                   Only affects CPI-linked track projections
