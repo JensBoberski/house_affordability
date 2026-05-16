@@ -331,7 +331,7 @@
       const principal = loanAmount * pct / 100;
       const effectiveRate = isPrime ? (rate + primeSpread) / 100 : rate / 100;
       const payment = monthlyPayment(principal, effectiveRate, years);
-      const maxPct = Math.max(0, 100 - otherTotal + pct);
+      const maxPct = Math.max(0, 100 - otherTotal);
 
       return (
         <div style={{ background:t.surface, borderRadius:12, border:`2px solid ${pct>0 ? track.color : t.border}`,
@@ -601,7 +601,8 @@
                   onSpreadChange={setPrimeSpread}
                   onPctChange={handlePctChange}
                   onRateChange={setRateMap[track.key]}
-                  otherTotal={totalPct - pcts[track.key]}
+                  otherTotal={TRACKS.filter(tr => tr.key !== "klatz" && tr.key !== track.key)
+                    .reduce((sum, tr) => sum + pcts[tr.key], 0)}
                 />
               ))}
             </div>
@@ -645,7 +646,7 @@
                     primeSpread={0} onSpreadChange={() => {}}
                     onPctChange={handlePctChange}
                     onRateChange={setMalatzRate}
-                    otherTotal={totalPct - pcts.malatz}
+                    otherTotal={pcts.prime + pcts.katzam}
                   />
                 </div>
               )}
