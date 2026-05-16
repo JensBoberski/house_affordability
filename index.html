@@ -226,12 +226,59 @@
       );
     }
 
-    function Slider({ label, value, min, max, step, onChange, display, t }) {
+    function Slider({ label, value, min, max, step, onChange, display, t, editable, rawDisplay }) {
+      const [editing, setEditing] = React.useState(false);
+      const [draft, setDraft] = React.useState("");
+
+      function startEdit() {
+        if (!editable) return;
+        setDraft(rawDisplay ? rawDisplay(value) : String(value));
+        setEditing(true);
+      }
+      function commitEdit() {
+        const num = parseFloat(String(draft).replace(/[^\d.]/g, ""));
+        if (!isNaN(num)) {
+          const clamped = Math.max(min, Math.min(max, num));
+          const snapped = Math.round(clamped / step) * step;
+          onChange(parseFloat(snapped.toFixed(10)));
+        }
+        setEditing(false);
+      }
+      function onKeyDown(e) {
+        if (e.key === "Enter") commitEdit();
+        if (e.key === "Escape") setEditing(false);
+      }
+
       return (
         <div style={{ marginBottom: 18 }}>
-          <div style={{ display:"flex", justifyContent:"space-between", marginBottom: 5 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 5 }}>
             <span style={{ fontSize:12, fontWeight:600, color:t.textMid }}>{label}</span>
-            <span style={{ fontSize:13, fontWeight:700, color:t.accent, fontFamily:"'DM Mono',monospace" }}>{display(value)}</span>
+            {editing ? (
+              <input
+                autoFocus
+                type="text"
+                inputMode="decimal"
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={onKeyDown}
+                style={{
+                  fontSize:13, fontWeight:700, color:t.accent, fontFamily:"'DM Mono',monospace",
+                  border:"none", borderBottom:`2px solid ${t.accent}`, outline:"none",
+                  background:"transparent", width:120, textAlign:"right",
+                }}
+              />
+            ) : (
+              <span
+                onClick={startEdit}
+                style={{
+                  fontSize:13, fontWeight:700, color:t.accent, fontFamily:"'DM Mono',monospace",
+                  cursor: editable ? "text" : "default",
+                  borderBottom: editable ? `1px dashed ${t.accent}` : "none",
+                  paddingBottom: editable ? 1 : 0,
+                }}
+              >{display(value)}</span>
+            )}
           </div>
           <SliderTrack value={value} min={min} max={max} step={step} onChange={onChange} accent={t.sliderAccent} />
           <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:t.textDim, marginTop:2 }}>
@@ -589,10 +636,10 @@
 
             {/* Main sliders */}
             <div className="grid-2col" style={{ background:t.surface, borderRadius:12, padding:"22px 24px", border:`1px solid ${t.border}`, marginBottom:16 }}>
-              <Slider label="Max Capital Available" value={maxCapital} min={500000}  max={4000000} step={50000} onChange={setMaxCapital} display={fmtM} t={t} />
-              <Slider label="Max Monthly Payment"   value={maxMonthly} min={5000}    max={30000}   step={500}   onChange={setMaxMonthly} display={v => "₪"+v.toLocaleString()} t={t} />
-              <Slider label="Mortgage Rate" value={mortgageRate} min={1.0} max={7.0} step={0.1} onChange={setMortgageRate} display={v => v.toFixed(1)+"%"} t={t} />
-              <Slider label="Mortgage Term (years)" value={mortgageYears} min={10} max={30} step={1} onChange={setMortgageYears} display={v => v+"yr"} t={t} />
+              <Slider label="Max Capital Available" value={maxCapital} min={500000}  max={4000000} step={50000} onChange={setMaxCapital} display={fmtM} t={t} editable rawDisplay={v => String(v)} />
+              <Slider label="Max Monthly Payment"   value={maxMonthly} min={5000}    max={30000}   step={500}   onChange={setMaxMonthly} display={v => "₪"+v.toLocaleString()} t={t} editable rawDisplay={v => String(v)} />
+              <Slider label="Mortgage Rate" value={mortgageRate} min={1.0} max={7.0} step={0.1} onChange={setMortgageRate} display={v => v.toFixed(1)+"%"} t={t} editable rawDisplay={v => String(v)} />
+              <Slider label="Mortgage Term (years)" value={mortgageYears} min={10} max={30} step={1} onChange={setMortgageYears} display={v => v+"yr"} t={t} editable rawDisplay={v => String(v)} />
             </div>
 
             {/* Closing costs toggle */}
