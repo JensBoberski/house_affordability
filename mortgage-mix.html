@@ -613,7 +613,7 @@
                   <div style={{ display:"flex", gap:16, marginTop:6, flexWrap:"wrap" }}>
                     {TRACKS.filter(tr=>pcts[tr.key]>0).map(tr => (
                       <span key={tr.key} style={{ fontSize:11, color:tr.color, fontWeight:600 }}>
-                        ■ {tr.name.split(" (")[0]} {pcts[tr.key]}%
+                        ■ {tr.name} {pcts[tr.key]}%
                       </span>
                     ))}
                   </div>
@@ -636,6 +636,70 @@
                     </div>
                   ))}
                 </div>
+
+                {/* Rate scenario comparison table */}
+                {(() => {
+                  const scenarios = [
+                    { name:"Rates rise further", sub:"BoI hikes another 1–2%", prime: 15, klatz: 70, katzam: 15, boi: primeBase + 1.5 },
+                    { name:"Rates stay flat",    sub:"Current level holds",      prime: 25, klatz: 60, katzam: 15, boi: primeBase },
+                    { name:"Rates fall slowly",  sub:"BoI cuts ~1% over 2yr",   prime: 40, klatz: 45, katzam: 15, boi: primeBase - 1 },
+                    { name:"Rates fall fast",    sub:"Back to 2021 levels",      prime: 60, klatz: 30, katzam: 10, boi: primeBase - 2.5 },
+                  ];
+                  return (
+                    <div style={{ marginBottom:16 }}>
+                      <div style={{ fontSize:15, fontWeight:700, color:t.text, marginBottom:4 }}>Rate scenarios — optimal split by outlook</div>
+                      <div style={{ fontSize:11, color:t.textDim, marginBottom:12 }}>
+                        Each scenario shows the suggested prime / fixed unlinked (קל"צ) / CPI-linked (קצ"מ) split and its impact. Click a row to apply it.
+                      </div>
+                      <div style={{ overflowX:"auto" }}>
+                        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, fontFamily:"'DM Sans',sans-serif" }}>
+                          <thead>
+                            <tr style={{ background:t.surface, borderBottom:`2px solid ${t.border}` }}>
+                              {["Outlook","Prime (פריים)","Fixed unlinked (קל\"צ)","CPI-linked (קצ\"מ)","Monthly (yr 1)","Blended rate"].map(h => (
+                                <th key={h} style={{ padding:"8px 12px", textAlign:"left", fontSize:10, fontWeight:600, color:t.textMid, textTransform:"uppercase", letterSpacing:"0.05em", whiteSpace:"nowrap" }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {scenarios.map((sc, i) => {
+                              const scPcts = { prime: sc.prime, klatz: sc.klatz, katzam: sc.katzam, malatz: 0 };
+                              const scPrimeRate = Math.max(0, sc.boi + primeSpread) / 100;
+                              const scPayments = [
+                                monthlyPayment(loanAmount * sc.prime/100, scPrimeRate, years),
+                                monthlyPayment(loanAmount * sc.klatz/100, klatzRate/100, years),
+                                monthlyPayment(loanAmount * sc.katzam/100, katzamRate/100, years),
+                                0,
+                              ];
+                              const scTotal = scPayments.reduce((s,v)=>s+v,0);
+                              const scBlend = blendedRate(scTotal, loanAmount, years) * 100;
+                              const isActive = pcts.prime===sc.prime && pcts.klatz===sc.klatz && pcts.katzam===sc.katzam;
+                              return (
+                                <tr key={sc.name}
+                                  onClick={() => { setPcts(scPcts); setPrimeBase(Math.max(0, sc.boi)); }}
+                                  style={{ cursor:"pointer", borderBottom:`1px solid ${t.border}`,
+                                    background: isActive ? `${t.accent}18` : i%2===0 ? t.bg : t.surface,
+                                    transition:"background 0.15s" }}>
+                                  <td style={{ padding:"10px 12px" }}>
+                                    <div style={{ fontWeight:600, color: isActive ? t.accent : t.text }}>{sc.name}</div>
+                                    <div style={{ fontSize:10, color:t.textDim, marginTop:1 }}>{sc.sub}</div>
+                                  </td>
+                                  <td style={{ padding:"10px 12px", fontFamily:"'DM Mono',monospace", color:"#5090d0", fontWeight:600 }}>{sc.prime}%</td>
+                                  <td style={{ padding:"10px 12px", fontFamily:"'DM Mono',monospace", color:"#e07060", fontWeight:600 }}>{sc.klatz}%</td>
+                                  <td style={{ padding:"10px 12px", fontFamily:"'DM Mono',monospace", color:"#c070c0", fontWeight:600 }}>{sc.katzam}%</td>
+                                  <td style={{ padding:"10px 12px", fontFamily:"'DM Mono',monospace", color:t.text, fontWeight:600 }}>₪{Math.round(scTotal).toLocaleString()}</td>
+                                  <td style={{ padding:"10px 12px", fontFamily:"'DM Mono',monospace", color:t.accent, fontWeight:700 }}>{scBlend.toFixed(2)}%</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div style={{ fontSize:10, color:t.textDim, marginTop:6 }}>
+                        Columns assume your current rate inputs. Prime column uses BoI rate adjusted per scenario. Click any row to apply that split.
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* CTA back to affordability map */}
                 <div style={{ background:t.surface, borderRadius:12, padding:"16px 20px", border:`1px solid ${t.border}`,
